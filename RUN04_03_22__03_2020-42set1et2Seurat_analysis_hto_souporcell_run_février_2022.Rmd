@@ -1,0 +1,1501 @@
+---
+title: "03_2020-42set1et2Seurat_analysis_hto_souporcell_run_février_2022"
+author: "Timothée Bigot"
+date: '2022-03-01'
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    code_folding: hide
+  pdf_document: 
+    toc: true
+    toc_depth: 3
+    highlight: zenburn
+editor_options: 
+  chunk_output_type: inline
+---
+---
+title:  "Seurat analysis on merged 2020-42-set1et2 data"
+---
+
+# ```{r setup, echo=FALSE}
+# knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+# knitr::opts_knit$set(root.dir = "/media/bigott/DATA/01_tim/01_these/01_etv6/06_Analysis/")
+# ```
+
+
+#####################
+##Loading Libraries##
+#####################
+```{r env_loading, include=FALSE}
+# Load all necessary packages
+library(sctransform)
+library(reticulate)
+library(Seurat)
+library(htmlwidgets)
+library(DT)
+library(plotly)
+library(pheatmap)
+library(reshape2)
+library("gridExtra")
+library(knitr)
+library(scater)
+```
+
+###################
+##Ggplot function##
+###################
+```{r}
+get_cluster_centroids <- function(comp_1,comp_2) {
+  coords=cbind(comp_1,comp_2)
+  clusters=clusters_res
+  centers=c()
+  for (cl in unique(clusters)) {
+    sel=clusters==cl
+    x_center=mean(coords[sel,1])
+    y_center=mean(coords[sel,2])
+    centers=rbind(centers,c(cl,x_center,y_center))
+  }
+  centers=data.frame("Cluster"=as.factor(centers[,1]),
+         "x_center"=as.numeric(centers[,2]),
+         "y_center"=as.numeric(centers[,3])
+         )
+}
+
+color_ordered2=c("indianred1", "darkorange3", "olivedrab3", "red4", "palegreen", "royalblue4", "palevioletred3", "orchid3", "olivedrab2", "palegreen3", "lightseagreen", "steelblue2", "royalblue2", "turquoise1", "chocolate1", "firebrick1", "magenta", "mediumorchid1","darkgreen", "indianred2", "blue")
+```
+
+
+################
+##Setting PATH##
+################
+```{r}
+#  Path to the folder that will contain output objects
+OUTPUT_PATH <- "/home/bigott/workspace2/DATA/01_tim/01_these/01_etv6/05_Outputs/06_Février_2022/03_2020-42-set1et2/"
+
+# Set the random number seed
+set.seed(1234)
+
+# Load path for files
+PATH_DATA_J6 <- "/home/bigott/workspace2/01_tim/01_these/01_etv6/05_Outputs/06_Février_2022/01_2020-42-set1/"
+PATH_DATA_J11 <- "/home/bigott/workspace2/01_tim/01_these/01_etv6/05_Outputs/06_Février_2022/02_2020-42-set2/"
+
+# Load rds objects
+Seurat_j6 <- readRDS(paste0(PATH_DATA_J6, "2020-42-set1.rds"))
+Seurat_j11 <- readRDS(paste0(PATH_DATA_J11, "2020-42-set2.rds"))
+```
+
+
+
+#########
+##Merge##
+#########
+```{r}
+# Merging the 2 seurat objects
+ETV6_2020 <- merge(
+  x = Seurat_j6,
+  y = c(Seurat_j11),
+  add.cell.id = c("D6","D11"))
+
+# nombre de cellules prédit
+length(rownames(Seurat_j6@meta.data))
+length(rownames(Seurat_j11@meta.data))
+sum(length(rownames(Seurat_j6@meta.data)), length(rownames(Seurat_j11@meta.data)))
+
+# nombre de cellules effectif
+length(rownames(ETV6_2020@meta.data))
+
+rm(Seurat_j6)
+rm(Seurat_j11)
+```
+
+
+#############################
+##Run UMAP Cell cycle score##
+#############################
+```{r}
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+ 
+ETV6_2020 <- CellCycleScoring(ETV6_2020,s.features = s.genes, g2m.features = g2m.genes)
+```
+
+## Percentage of mitochondrial genes
+```{r include=T}
+mito.genes <- grep("MT-", rownames(ETV6_2020@assays$RNA), value=T)
+mito.genes
+
+# The [[ operator can add columns to object metadata. This is a great place to stash QC stats
+ETV6_2020[["percent.mt"]] <- PercentageFeatureSet(ETV6_2020, pattern = "MT-")
+
+# Compute mitochondrial percentage threshold
+discard.mito=isOutlier(ETV6_2020[["percent.mt"]][,1],type="higher")
+mito.threshold=min(ETV6_2020[["percent.mt"]][,1][discard.mito])
+mito.threshold
+```
+
+
+
+##############
+##QC metrics##
+##############
+## Visualize QC metrics as a violin plot
+```{r}
+VlnPlot(ETV6_2020, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3,pt.size=0.1, group.by = "HT0_souporcell_classification")
+```
+
+## Subset the dataset, to remove the cells having too few genes/cell and too much mitochondrial genes. Here, I'll set the cut-offs at min 1000 genes and max percent mitochondrial genes `r signif(mito.threshold,3)`% (calculated by function scater::isOutlier()).  
+```{r}
+ETV6_2020 <- subset(ETV6_2020, subset = (nFeature_RNA > 1000 & percent.mt < mito.threshold))
+dim(ETV6_2020)
+```
+
+
+##########################
+##Seurat object creation##
+##########################
+## Normalize data
+```{r}
+# standard log-normalization
+ETV6_2020 <- NormalizeData(ETV6_2020, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+## Some counts after normalization
+```{r}
+ETV6_2020
+```
+
+## Choose top 1k variable genes
+```{r}
+ETV6_2020 <- FindVariableFeatures(object=ETV6_2020, selection.method = "vst", mean.function = ExpMean, dispersion.function = LogVMR, binning.method = "equal_width", num.bin = 20, y.cutoff = 0.5, nfeatures = 1000, verbose=TRUE)
+
+top40 <- head(VariableFeatures(ETV6_2020), 40)
+top100 <- head(VariableFeatures(ETV6_2020), 100)
+```
+
+## Plot variable genes:
+```{r}
+plot1 <- VariableFeaturePlot(ETV6_2020)
+LabelPoints(plot = plot1, points = top40, repel = TRUE)
+```
+
+## Standard scaling (without regression)
+```{r}
+setwd(OUTPUT_PATH)
+all.genes <- rownames(ETV6_2020)
+ETV6_2020 <- ScaleData(ETV6_2020, features = all.genes, display.progress = TRUE, do.scale=FALSE,
+                       vars.to.regress = c("S.Score","G2M.Score")
+                       )
+```
+
+## Run PCA
+```{r}
+ETV6_2020 <- RunPCA(ETV6_2020, features = VariableFeatures(object = ETV6_2020), npcs=40, pcs.print = 5, seed.use=42, rev.pca = FALSE)
+```
+
+# add meta.data useful for next analyses 
+```{r}
+ETV6_2020@meta.data$individuals <- "NA"
+ETV6_2020@meta.data$individuals <- ETV6_2020@meta.data$HT0_souporcell_classification
+ETV6_2020@meta.data$day <- NULL
+ETV6_2020@meta.data$HT0_souporcell_classification <- NULL
+
+ETV6_2020@meta.data$ETV6status <- "NA"
+
+for (i in 1:length(rownames(ETV6_2020@meta.data))){
+  if (ETV6_2020@meta.data$individuals[i] == "Ctrl1"){
+    ETV6_2020@meta.data$ETV6status[i] <- "Controls"
+  }
+  if (ETV6_2020@meta.data$individuals[i] == "Ctrl2"){
+    ETV6_2020@meta.data$ETV6status[i] <- "Controls"
+  }
+  if (ETV6_2020@meta.data$individuals[i] == "P214.III.8"){
+    ETV6_2020@meta.data$ETV6status[i] <- "Patients"
+  }
+  if (ETV6_2020@meta.data$individuals[i] == "F417.II.2"){
+    ETV6_2020@meta.data$ETV6status[i] <- "Patients"
+  }
+}
+
+ETV6_2020@meta.data$orig.ident <- "NA"
+
+for (turing in 1:length(rownames(ETV6_2020@meta.data))){
+  if (strsplit(rownames(ETV6_2020@meta.data), split = "_")[[turing]][1] %in% "D6"){
+    ETV6_2020@meta.data$orig.ident[turing] <- "D6"
+  }
+  if (strsplit(rownames(ETV6_2020@meta.data), split = "_")[[turing]][1] %in% "D11"){
+    ETV6_2020@meta.data$orig.ident[turing] <- "D11"
+  }
+}
+
+ETV6_2020@meta.data$sample <- "NA"
+
+ETV6_2020@meta.data$sample <- paste(ETV6_2020@meta.data$individuals, ETV6_2020@meta.data$orig.ident, sep = "_")
+```
+
+## Examine PCA results
+```{r}
+Idents(ETV6_2020) <- ETV6_2020@meta.data$individuals
+VizDimLoadings(ETV6_2020, dims = 1:2, reduction = "pca")
+DimPlot(ETV6_2020, dims=c(1, 2), reduction = "pca", pt.size=1)
+DimPlot(ETV6_2020, dims=c(3, 4), reduction = "pca", pt.size=1)
+```
+
+## Save PCA coord
+```{r}
+pca_coordinates <- ETV6_2020@reductions$pca@cell.embeddings
+write.table(pca_coordinates,
+	    paste(OUTPUT_PATH, "PCA_coordinates_2020-42-set1et2.txt", sep=""),
+	    sep="\t", quote=F, col.names=NA
+)
+```
+
+## Heatmaps:
+```{r}
+DimHeatmap(ETV6_2020, dims = 1:6, cells = length(colnames(ETV6_2020)), balanced = TRUE)
+DimHeatmap(ETV6_2020, dims = 1, cells = length(colnames(ETV6_2020)), balanced = TRUE)
+```
+
+## JackStraw and ElbowPlot:
+```{r}
+ETV6_2020 <- JackStraw(ETV6_2020, num.replicate = 100)
+ETV6_2020 <- ScoreJackStraw(ETV6_2020, dims = 1:20)
+           
+JackStrawPlot(ETV6_2020, dims = 1:15)
+           
+ElbowPlot(ETV6_2020)
+```
+
+## Perform clustering: 
+```{r}
+ETV6_2020 <- FindNeighbors(object = ETV6_2020, k.param = 30, dims = 1:10, compute.SNN = TRUE, prune.SNN = 1/15)
+
+ETV6_2020 <- FindClusters(object= ETV6_2020, modularity.fxn = 1,
+             resolution = 0.8, algorithm = 1, n.start = 10, n.iter = 10,
+             random.seed = 42, temp.file.location = NULL, edge.file.name = NULL,
+             verbose = TRUE)
+
+clusters_res <- ETV6_2020[["RNA_snn_res.0.8"]][,1]
+names(clusters_res)=colnames(ETV6_2020)
+
+write.table(clusters_res,
+	    paste(OUTPUT_PATH, "clusters_res_0.8_2020-42-set1et2.txt"),
+	    sep="\t", quote=F, col.names=NA)
+```
+
+## Look at PCA results again, with clusters
+```{r}
+DimPlot(ETV6_2020, dims=c(1, 2), reduction = "pca", pt.size=1)
+DimPlot(ETV6_2020, dims=c(3, 4), reduction = "pca", pt.size=1)
+```
+
+## Run UMAP: 
+```{r}
+ETV6_2020 <- RunUMAP(ETV6_2020, dims = 1:20, umap.method="uwot", seed.use=10, n.components=2, n.neighbors = 30, spread=1, min.dist=0.2)
+DimPlot(ETV6_2020, reduction = "umap", pt.size=0.7, label = TRUE)
+
+# note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+UMAP_coord <- ETV6_2020@reductions$umap@cell.embeddings
+write.table(UMAP_coord,
+	    paste(OUTPUT_PATH, "UMAP_coordinates_2020-42-set1et2.txt", sep = ""),
+	    sep="\t", quote=F, col.names=NA
+)
+```
+
+## Run UMAP Cell cycling
+```{r}
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+ 
+ETV6_2020 <- CellCycleScoring(ETV6_2020,s.features = s.genes, g2m.features = g2m.genes)
+DimPlot(ETV6_2020,group.by="Phase")+ggtitle("UMAP - Cell cycle")
+```
+
+## Run tSNE: 
+```{r}
+ETV6_2020 <- RunTSNE(object= ETV6_2020,  dims = 1:10, dim.embed = 2, seed.use = 42, tsne.method="Rtsne", reduction="pca")
+
+DimPlot(ETV6_2020, reduction = "tsne", pt.size=0.7, label = TRUE)
+tSNE_coord <- ETV6_2020@reductions$tsne@cell.embeddings
+```
+
+
+###################
+##Merging quality##
+###################
+
+
+
+## Violin
+The proportion of mitochondrial RNA are similar across samples.
+The numbers of features and counts are different, however these differences reflects biological knowledge (polyploidization of Megakaryocytes which is reduced in patient cells)
+
+```{r violin_mito, echo=FALSE, fig.width=10,fig.height=8}
+VlnPlot(ETV6_2020,features = c("nFeature_RNA", "nCount_RNA","percent.mt"),pt.size = 0.1, log = FALSE,  group.by = "sample")
+```
+
+## Lymphoid overlap
+B-cells an T-cells are overlapping at Day 6 and Day 11.
+* MS4A1 gene is a marker of B-cells and CD3E is a marker of T-cells.
+* Refs : 
+```{r LBT_cells, echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = ETV6_2020, features = c("MS4A1","CD5","CD19") , split.by = "ETV6status", pt.size = 0.6,cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"), order = T)
+FeaturePlot(object = ETV6_2020, features = c("CD3E","CD2","CD4") , split.by = "ETV6status", pt.size = 0.6,cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"), order = T)
+FeaturePlot(object = ETV6_2020, features = c("ITGAM","ITGAL","ITGAX") , split.by = "ETV6status", pt.size = 0.6,cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"), order = T)
+FeaturePlot(object = ETV6_2020, features = c("FCGR3A","NCAM1") , split.by = "ETV6status", pt.size = 0.6,cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"), order = T)
+FeaturePlot(object = ETV6_2020, features = c("CD1A","CD1C") , split.by = "ETV6status", pt.size = 0.6,cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"), order = T)
+```
+
+## Myeloid overlap
+At CMP stage we do not observe differences among patients and controls therefore in absence of batch effect those cells should superimpose at D6 and D11 for patients and controls.
+MPO, ELANE and SERPINB10 combined are GMP markers, on the UMAP plots we can see that indeed the merging is consistent.
+```{r CMP_cells,  echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = ETV6_2020, features = c("MPO","ELANE","SERPINB10") , pt.size = 0.6, split.by = "ETV6status",cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"), order = T)
+```
+
+# Non myeloid cells removal
+* To do so, we first check parameters at resolution 0.8
+
+## Markers dotplot
+We use know markers to remove clusters of non myeloid cell.
+For non myeloid cells, we checked CD3E = T-cell ; MS4A1 = B-cells ; NCAM1 = NK 
+As myeloid markers as a first draw, we used ITGAM as Mono/macro marker.
+
+```{r DotPlot, echo=FALSE}
+Idents(ETV6_2020) <- "RNA_snn_res.0.8"
+dp <- DotPlot(ETV6_2020, features = c("MS4A1","CD3E","NCAM1","ITGAM","PROM1","FLT3","SERPINB10","ELANE","MPO","ITGA2B","PF4")) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis()
+dp
+```
+
+## Perform clustering:
+* After a classical resolution investigation, we maximised the resolution to isolate small populations corresponding to Lymphoid cells.
+```{r}
+ETV6_2020 <- FindClusters(object= ETV6_2020, modularity.fxn = 1,
+             resolution = 4, algorithm = 1, n.start = 10, n.iter = 10,
+             random.seed = 42, temp.file.location = NULL, edge.file.name = NULL,
+             verbose = TRUE)
+
+clusters_res <- ETV6_2020[["RNA_snn_res.4"]][,1]
+names(clusters_res)=colnames(ETV6_2020)
+
+write.table(clusters_res,
+	    paste(OUTPUT_PATH, "clusters_res_4_2020-42-set1et2.txt"),
+	    sep="\t", quote=F, col.names=NA)
+
+DimPlot(ETV6_2020, reduction = "umap", pt.size=0.7, label = TRUE)
+```
+
+```{r}
+Idents(ETV6_2020) <- "RNA_snn_res.4"
+dp <- DotPlot(ETV6_2020, features = c("MS4A1","CD3E","NCAM1","ITGAM","PROM1","FLT3","SERPINB10","ELANE","MPO","ITGA2B","PF4")) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis()
+dp
+```
+
+
+# Dataset cleaning
+```{r dataset_cleaning, echo=FALSE, fig.width=10,fig.height=8}
+# Removing the B and T cells
+ETV6_2020 <- subset(ETV6_2020,idents = c("36","38"), invert = TRUE)
+Idents(ETV6_2020) <- "RNA_snn_res.0.8"
+DimPlot(ETV6_2020)
+```
+
+
+###########################################################################################################
+###########################################################################################################
+###########################################################################################################
+################################## ETV6_2020 SEURAT RECREATION ############################################
+###########################################################################################################
+###########################################################################################################
+###########################################################################################################
+
+
+
+#####################################
+##Percentage of mitochondrial genes##
+#####################################
+
+## Visualize QC metrics as a violin plot
+```{r}
+VlnPlot(ETV6_2020, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3,pt.size=0.1, group.by = "sample")
+```
+
+## Subset the dataset, to remove the cells having too few genes/cell and too much mitochondrial genes. Here, I'll set the cut-offs at min 1000 genes and max percent mitochondrial genes `r signif(mito.threshold,3)`% (calculated by function scater::isOutlier()).  
+```{r}
+ETV6_2020 <- subset(ETV6_2020, subset = (nFeature_RNA > 1000 & percent.mt < mito.threshold))
+dim(ETV6_2020)
+```
+
+
+
+
+###############################
+##Recreation of seurat object##
+###############################
+## Normalize data
+```{r}
+# standard log-normalization
+ETV6_2020 <- NormalizeData(ETV6_2020, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+## Some counts after normalization
+```{r}
+ETV6_2020
+table(ETV6_2020@meta.data$sample)
+table(ETV6_2020@meta.data$individuals)
+```
+
+## Choose top 1k variable genes
+```{r}
+ETV6_2020 <- FindVariableFeatures(object=ETV6_2020, selection.method = "vst", mean.function = ExpMean, dispersion.function = LogVMR, binning.method = "equal_width", num.bin = 20, y.cutoff = 0.5, nfeatures = 1000, verbose=TRUE)
+
+top40 <- head(VariableFeatures(ETV6_2020), 40)
+top100 <- head(VariableFeatures(ETV6_2020), 100)
+```
+
+## Plot variable genes:
+```{r}
+plot1 <- VariableFeaturePlot(ETV6_2020)
+LabelPoints(plot = plot1, points = top40, repel = TRUE)
+```
+
+## Standard scaling (with regression again)
+```{r}
+all.genes <- rownames(ETV6_2020)
+ETV6_2020 <- ScaleData(ETV6_2020, features = all.genes, display.progress = TRUE, do.scale=FALSE, vars.to.regress = c("S.Score","G2M.Score"))
+```
+
+## Run PCA
+```{r}
+ETV6_2020 <- RunPCA(ETV6_2020, features = VariableFeatures(object = ETV6_2020), npcs=40, pcs.print = 5, seed.use=42, rev.pca = FALSE)
+```
+
+## Examine PCA results
+```{r}
+Idents(ETV6_2020) <- ETV6_2020@meta.data$individuals
+VizDimLoadings(ETV6_2020, dims = 1:2, reduction = "pca")
+DimPlot(ETV6_2020, dims=c(1, 2), reduction = "pca", pt.size=1)
+DimPlot(ETV6_2020, dims=c(3, 4), reduction = "pca", pt.size=1)
+```
+
+## Save PCA coord
+```{r}
+pca_coordinates <- ETV6_2020@reductions$pca@cell.embeddings
+write.table(pca_coordinates,
+	    paste(OUTPUT_PATH, "PCA_coordinates_2020-42-set1et2_final.txt", sep=""),
+	    sep="\t", quote=F, col.names=NA
+)
+```
+
+## Heatmaps:
+```{r}
+DimHeatmap(ETV6_2020, dims = 1:6, cells = length(colnames(ETV6_2020)), balanced = TRUE)
+DimHeatmap(ETV6_2020, dims = 1, cells = length(colnames(ETV6_2020)), balanced = TRUE)
+```
+
+## JackStraw and ElbowPlot:
+```{r}
+ETV6_2020 <- JackStraw(ETV6_2020, num.replicate = 100)
+ETV6_2020 <- ScoreJackStraw(ETV6_2020, dims = 1:20)
+           
+JackStrawPlot(ETV6_2020, dims = 1:15)
+           
+ElbowPlot(ETV6_2020)
+```
+
+## Perform clustering: 
+```{r}
+# setwd(OUTPUT_PATH)
+ETV6_2020 <- FindNeighbors(object = ETV6_2020, k.param = 30, dims = 1:10, compute.SNN = TRUE, prune.SNN = 1/15)
+
+ETV6_2020 <- FindClusters(object= ETV6_2020, modularity.fxn = 1,
+             resolution = 0.8, algorithm = 1, n.start = 10, n.iter = 10,
+             random.seed = 42, temp.file.location = NULL, edge.file.name = NULL,
+             verbose = TRUE)
+clusters_res <- ETV6_2020[["RNA_snn_res.0.8"]][,1]
+names(clusters_res)=colnames(ETV6_2020)
+
+write.table(clusters_res,
+	    paste(OUTPUT_PATH, "clusters_res_0.8_2020-42-set1et2_final.txt"),
+	    sep="\t", quote=F, col.names=NA)
+```
+
+## Look at PCA results again, with clusters
+```{r}
+DimPlot(ETV6_2020, dims=c(1, 2), reduction = "pca", pt.size=1)
+DimPlot(ETV6_2020, dims=c(3, 4), reduction = "pca", pt.size=1)
+```
+
+## Run UMAP: 
+```{r}
+# setwd(OUTPUT_PATH)
+ETV6_2020 <- RunUMAP(ETV6_2020, dims = 1:28, umap.method="uwot", seed.use=15, n.components=2, n.neighbors = 30, spread=1, min.dist=0.2)
+DimPlot(ETV6_2020, reduction = "umap", pt.size=0.7, label = TRUE, group.by = "RNA_snn_res.0.8", split.by = "ETV6status")
+
+# note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+UMAP_coord <- ETV6_2020@reductions$umap@cell.embeddings
+write.table(UMAP_coord,
+	    paste(OUTPUT_PATH, "UMAP_coordinates_2020-42-set1et2_final.txt"),
+	    sep="\t", quote=F, col.names=NA)
+```
+
+## Run UMAP Cell cycling
+```{r}
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+ 
+ETV6_2020 <- CellCycleScoring(ETV6_2020,s.features = s.genes, g2m.features = g2m.genes)
+DimPlot(ETV6_2020,group.by="Phase")+ggtitle("UMAP - Cell cycle")
+```
+
+## Run tSNE: 
+```{r}
+ETV6_2020 <- RunTSNE(object= ETV6_2020,  dims = 1:10, dim.embed = 2, seed.use = 42, tsne.method="Rtsne", reduction="pca")
+DimPlot(ETV6_2020, reduction = "tsne", pt.size=0.7, label = TRUE)
+tSNE_coord <- ETV6_2020@reductions$tsne@cell.embeddings
+```
+
+## Save the R object
+```{r}
+saveRDS(ETV6_2020, file=paste(OUTPUT_PATH,"ETV6_2020_regressed_final.rds",sep = ""))
+```
+
+
+
+
+
+
+###########################################################################################################
+###########################################################################################################
+###########################################################################################################
+################################## CTRL OBJECT SEURAT CREATION ############################################
+###########################################################################################################
+###########################################################################################################
+###########################################################################################################
+
+
+
+
+###################
+##Subset on ctrls##
+###################
+```{r}
+Idents(ETV6_2020) <- "ETV6status"
+ctrl.object <- subset(x = ETV6_2020, idents = "Controls")
+DimPlot(ctrl.object)
+```
+
+## Visualize QC metrics as a violin plot
+```{r}
+VlnPlot(ctrl.object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3,pt.size=0.1, group.by = "sample")
+```
+
+
+
+
+
+#############################
+##Creation of seurat object##
+#############################
+
+## Normalize data
+```{r}
+# standard log-normalization
+ctrl.object <- NormalizeData(ctrl.object, normalization.method = "LogNormalize", scale.factor = 10000)
+
+write.table(ctrl.object@assays$RNA@data,
+	    paste(OUTPUT_PATH, "log_norm_filtered_ctrl_object.txt", sep=""),
+	    sep="\t", quote=F, col.names=NA)
+```
+
+## Some counts after normalization
+```{r}
+ctrl.object
+table(ctrl.object$sample)
+```
+
+## Choose top 1k variable genes
+```{r}
+ctrl.object <- FindVariableFeatures(object=ctrl.object, selection.method = "vst", mean.function = ExpMean, dispersion.function = LogVMR, binning.method = "equal_width", num.bin = 20, y.cutoff = 0.5, nfeatures = 1000, verbose=TRUE)
+
+top40 <- head(VariableFeatures(ctrl.object), 40)
+top100 <- head(VariableFeatures(ctrl.object), 100)
+```
+
+## Plot variable genes:
+```{r}
+plot1 <- VariableFeaturePlot(ctrl.object)
+LabelPoints(plot = plot1, points = top40, repel = TRUE)
+```
+
+## Standard scaling (with regression)
+```{r}
+setwd(OUTPUT_PATH)
+all.genes <- rownames(ctrl.object)
+ctrl.object <- ScaleData(ctrl.object, features = all.genes, display.progress = TRUE, do.scale=FALSE, vars.to.regress = c("S.Score","G2M.Score"))
+```
+
+## Run PCA
+```{r}
+ctrl.object <- RunPCA(ctrl.object, features = VariableFeatures(object = ctrl.object), npcs=40, pcs.print = 5, seed.use=42, rev.pca = FALSE)
+```
+
+## Examine PCA results
+```{r}
+Idents(ctrl.object) <- ctrl.object@meta.data$sample
+VizDimLoadings(ctrl.object, dims = 1:2, reduction = "pca")
+DimPlot(ctrl.object, dims=c(1, 2), reduction = "pca", pt.size=1)
+DimPlot(ctrl.object, dims=c(3, 4), reduction = "pca", pt.size=1)
+```
+
+## Save PCA coord
+```{r}
+pca_coordinates <- ctrl.object@reductions$pca@cell.embeddings
+write.table(pca_coordinates,
+	    paste(OUTPUT_PATH, "PCA_coordinates_ctrl_object.txt"),
+	    sep="\t", quote=F, col.names=NA
+)
+```
+
+## Heatmaps:
+```{r}
+DimHeatmap(ctrl.object, dims = 1:6, cells = length(colnames(ctrl.object)), balanced = TRUE)
+DimHeatmap(ctrl.object, dims = 1, cells = length(colnames(ctrl.object)), balanced = TRUE)
+```
+
+## JackStraw and ElbowPlot:
+```{r}
+ctrl.object <- JackStraw(ctrl.object, num.replicate = 100)
+ctrl.object <- ScoreJackStraw(ctrl.object, dims = 1:20)
+           
+JackStrawPlot(ctrl.object, dims = 1:15)
+           
+ElbowPlot(ctrl.object)
+```
+
+## Perform clustering: 
+```{r}
+ctrl.object <- FindNeighbors(object = ctrl.object, k.param = 30, dims = 1:6, compute.SNN = TRUE, prune.SNN = 1/15)
+
+ctrl.object <- FindClusters(object= ctrl.object, modularity.fxn = 1,
+             resolution = 1.2, algorithm = 1, n.start = 10, n.iter = 10,
+             random.seed = 42, temp.file.location = NULL, edge.file.name = NULL,
+             verbose = TRUE)
+clusters_res <- ctrl.object[["RNA_snn_res.1.2"]][,1]
+names(clusters_res)=colnames(ctrl.object)
+
+write.table(clusters_res,
+	    paste(OUTPUT_PATH, "clusters_res_1_2_ctrl_object.txt"),
+	    sep="\t", quote=F, col.names=NA)
+```
+
+## Look at PCA results again
+```{r}
+DimPlot(ctrl.object, dims=c(1, 2), reduction = "pca", pt.size=1)
+DimPlot(ctrl.object, dims=c(3, 4), reduction = "pca", pt.size=1)
+```
+
+## Run UMAP
+```{r}
+ctrl.object <- RunUMAP(ctrl.object, dims = 1:13, umap.method="uwot", seed.use=10, n.components=2, n.neighbors = 30, spread=1, min.dist=0.2)
+DimPlot(ctrl.object, reduction = "umap", pt.size=0.7, label = TRUE, label.size = 5)
+
+# note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+UMAP_coord <- ctrl.object@reductions$umap@cell.embeddings
+write.table(UMAP_coord,
+	    "UMAP_coordinates_ctrl_object.txt",
+	    sep="\t", quote=F, col.names=NA
+)
+```
+
+## Run UMAP Cell cycling
+```{r}
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+ 
+ctrl.object <- CellCycleScoring(ctrl.object,s.features = s.genes, g2m.features = g2m.genes)
+DimPlot(ctrl.object,group.by="Phase")+ggtitle("UMAP - Cell cycle")
+```
+
+## Run tSNE: 
+```{r}
+ctrl.object <- RunTSNE(object= ctrl.object,  dims = 1:10, dim.embed = 2, seed.use = 42, tsne.method="Rtsne", reduction="pca")
+DimPlot(ctrl.object, reduction = "tsne", pt.size=0.7, label = TRUE)
+tSNE_coord <- ctrl.object@reductions$tsne@cell.embeddings
+```
+
+
+
+
+####################
+##Quality controls##
+####################
+
+## General QC UMAPs
+
+### mitochondrial percentage
+```{r UMAP_mito_QC, echo=FALSE, fig.width=10,fig.height=8}
+### mitochondrial percentage
+UMAP <- data.frame(UMAP_1 = ctrl.object@reductions$umap@cell.embeddings[,1],
+                   UMAP_2 = ctrl.object@reductions$umap@cell.embeddings[,2],
+                   gene = ctrl.object@meta.data$percent.mt)
+
+Mutation = ctrl.object@meta.data$ETV6status
+Max = max(ctrl.object@meta.data$percent.mt)
+Min = min(ctrl.object@meta.data$percent.mt)
+
+ggplot(UMAP,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=gene,shape=Mutation)) + 
+  scale_colour_gradient2(low = "blue",mid="orange",high="red",name="Mitochondrial percentage",midpoint=(Max+Min)/2)
+```
+
+### features
+```{r UMAP_features_QC, echo=FALSE, fig.width=10,fig.height=8}
+UMAP <- data.frame(UMAP_1 = ctrl.object@reductions$umap@cell.embeddings[,1],
+                   UMAP_2 = ctrl.object@reductions$umap@cell.embeddings[,2],
+                   gene = ctrl.object@meta.data$nFeature_RNA)
+
+Mutation = ctrl.object@meta.data$ETV6status
+Max=max(ctrl.object@meta.data$nFeature_RNA)
+Min=min(ctrl.object@meta.data$nFeature_RNA)
+
+ggplot(UMAP,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=gene, shape = Mutation)) + 
+  scale_colour_gradient2(low = "blue",mid="orange",high="red",name="n° of genes expressed",midpoint=(Max+Min)/2)
+```
+
+### mRNA counts
+```{r UMAP_mRNA_QC, echo=FALSE, fig.width=10,fig.height=8}
+UMAP <- data.frame(UMAP_1 = ctrl.object@reductions$umap@cell.embeddings[,1],
+                   UMAP_2 = ctrl.object@reductions$umap@cell.embeddings[,2],
+                   gene = ctrl.object@meta.data$nCount_RNA)
+
+Mutation = ctrl.object@meta.data$ETV6status
+Max=max(ctrl.object@meta.data$nCount_RNA)
+Min=min(ctrl.object@meta.data$nCount_RNA)
+
+ggplot(UMAP,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=gene, shape = Mutation))+
+  scale_colour_gradient2(low = "blue",mid="orange",high="red",name="mRNA count",midpoint=(Max+Min)/2)
+```
+
+############
+##ANALYSIS##
+############
+
+#################################
+## Top marker genes by clusters##
+#################################
+```{r}
+for(i in 0:(max(as.numeric(levels(ctrl.object@meta.data$seurat_clusters))))) {
+  assign(paste("cluster", i,".markers", sep = ""), FindMarkers(ctrl.object, features = all.genes, ident.1 = i, test.use = "bimod", only.pos = F, logfc.threshold = 0.25))
+    print(paste("cluster", i,".markers", sep = ""))
+    print(head(get(paste("cluster", i,".markers", sep = "")),n=50))
+    write.table(get(paste("cluster", i,".markers", sep = "")),
+		paste("cluster", i,"markers_ctrl_object.txt", sep = "_"),
+		quote=FALSE,row.names = TRUE)
+}
+```
+
+
+
+########################################
+##top 10 DE gene expression by cluster##
+########################################
+
+### table
+Checking most differentially expressed gene with FindAllMarkers in each clusters compared to all others.
+```{r top_DE_table, echo=FALSE, message=FALSE, warning=FALSE}
+# FindAllMarkers
+Idents(ctrl.object) <- "RNA_snn_res.1.2"
+ctrl.markers <- FindAllMarkers(ctrl.object, only.pos = F, min.pct = 0.1, logfc.threshold = 0.25)
+
+# table
+top_genes <- ctrl.markers %>% group_by(cluster) %>% top_n(20, avg_log2FC)
+write.table(top_genes, file = paste(OUTPUT_PATH, "top20_FAM_ctrl.csv"))
+datatable(ctrl.markers, filter = 'top', options = list(pageLength = 20)) %>% formatRound(2:4, 2) %>% formatSignif(c(1,5), digits = 2)
+```
+
+### Heatmap
+```{r Heatmap_ctrl,  echo=FALSE,  fig.width=10,fig.height=10}
+str_top_genes <- unique(as.character(top_genes$gene))
+DoHeatmap(object = ctrl.object, features = as.character(top_genes$gene),group.by = "RNA_snn_res.1.2", group.bar = T, label = T,size = 5, draw.lines = T, lines.width = 10,group.bar.height = 0.02)
+```
+
+### DotPlot
+```{r dotplot_ctrl, echo=FALSE,  fig.width=10,fig.height=10}
+Idents(ctrl.object) <- "RNA_snn_res.1.2"
+dp <- DotPlot(ctrl.object, features = str_top_genes) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis()
+dp
+```
+
+
+
+
+
+
+##############################################
+##Signature for identification of population##
+##############################################
+
+Supervised selection of populations based on DE genes and published signatures.
+
+```{r dotplot_supervised, echo=FALSE, message=FALSE,fig.width=10,fig.height=8}
+Idents(ctrl.object) <- "RNA_snn_res.1.2"
+ctrl.object@active.ident <- factor(ctrl.object@active.ident, levels = c("14","12","8","3","6","1","2","0","4","5","9","11","7","10","13"))
+# dp <- DotPlot(ctrl.object, features = c("KIT","THY1","SLAMF1","NPR3","AVP","PROM1","HOPX","FLT3","CRHBP","SPINK2","CSF3R","IGHM","CD34","SMIM24","DEPTOR","HACD1","CPB1","SVOPL","CD38","GLIPR1","TFRC","TGFB1","PLEK","TRPC6","GP6","ITGB3","SELP","VWF","ITGA2B","LTBP1","GP9","MEIS1","MPIG6B","PPBP","GP1BA","PF4","RASGRP2","TFR2","ANK1","ACSM3","KLF1","HBB","EPOR","MPO","ELANE","SERPINB10","CTSG","CPA3","MS4A2","TPSAB1")) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis()
+# dp
+
+dp <- DotPlot(ctrl.object, features = c("THY1","PROM1","FLT3","CRHBP","HOPX","AVP","KIT","SPINK2","CSF3R","MPO","ELANE","PRTN3","AZU1","SERPINB10","CTSG","CPA3","CLC","PRG2","TPSAB1","VWA5A","CD38","TFRC","DEPTOR","KLF1","TFR2","HBB","APOC1","ANK1","ACSM3","LMNA","CAVIN2","LAT","CD9","STOM","PLEK","ITGA2B","GP9","GP6","GP1BA","PF4","RASGRP2","MPIG6B","VWF","PPBP","SELP","LTBP1")) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis()
+dp
+```
+
+## Dimensional reduction plot, with cells colored by a quantitative feature
+```{r echo=FALSE}
+gene_list <- c("PROM1","SPINK2","CD34","KIT","TFRC","PLEK","ITGB3","VWF","ITGA2B","GP9","KLF1","HBB","MPO","SERPINB10","TPSAB1","CPA3","PPBP")
+
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = ctrl.object, features = gene_list[i], reduction = "umap", cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"), pt.size = 1)+NoAxes()+NoLegend())
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+## Feature Plot signatures {.tabset}
+Adding module score (based on published signatures) in meta.data and plotting it with FeaturePlot. Other solutions exist for signatures and shall be considered.
+
+```{r FP_sig, echo=FALSE, fig.width=10,fig.height=8}
+ctrl.object <- AddModuleScore(ctrl.object, features = list(c("PROM1","FLT3","CRHBP","HOPX","AVP","IGHM","GLIPR1")),
+name = "HSPC")
+
+ctrl.object <- AddModuleScore(ctrl.object, features = list(c("CPA3","PRG2","RHEX","ALOX5AP","MS4A2")),
+name = "CMP")
+ctrl.object <- AddModuleScore(ctrl.object, features = list(c("MS4A3","RNASE2","EPX","CLC","CSF2RB","CTSG")),
+name = "non.primed.CMP")
+ctrl.object <- AddModuleScore(ctrl.object, features = list(c("LMNA","CAVIN2","LAT","VWA5A","KIT","HPGDS","KRT1","TPSB2","TPSAB1","TMEM176B","SAMSN1","CD44")),
+name = "Mk.primed.CMP")
+
+ctrl.object <- AddModuleScore(ctrl.object, features = list(c("CSTA","MPO","ELANE","PRTN3","AZU1","RNASE3","CFD")),
+name = "GMP")
+
+ctrl.object <- AddModuleScore(ctrl.object, features = list(c("CD38","KLF1","DEPTOR","ACSM3","APOC1","TFRC","ANK1","TMSB10","ALDH1A1","MT-ATP8","H2AFY","GYPB")),
+name = "MEP")
+ctrl.object <- AddModuleScore(ctrl.object, features = list(c("BLVRB","HBB","APOC1","TFR2")),
+name = "MEP_ERP")
+
+ctrl.object <- AddModuleScore(ctrl.object, features = list(c("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40")),
+name = "MkP_Mk")
+```
+
+### HSPC
+```{r FP_sig1, echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = ctrl.object, features = "HSPC1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+```
+
+### CMP
+```{r FP_sig2, echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = ctrl.object, features = "CMP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+
+FeaturePlot(object = ctrl.object, features = "Mk.primed.CMP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+
+FeaturePlot(object = ctrl.object, features = "non.primed.CMP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+```
+
+### GMP
+```{r FP_sig3, echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = ctrl.object, features = "GMP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+```
+
+### MEP
+```{r FP_sig4, echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = ctrl.object, features = "MEP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+
+FeaturePlot(object = ctrl.object, features = "MEP_ERP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+```
+
+### MkP.Mk
+```{r FP_sig6, echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = ctrl.object, features = "MkP_Mk1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+```
+## celltype assignation
+```{r echo=FALSE}
+ctrl.object@meta.data$celltypes <- "NA"
+
+for (i in 1:length(rownames(ctrl.object@meta.data))) {
+	ifelse(ctrl.object@meta.data$RNA_snn_res.1[i] %in% "11",ctrl.object@meta.data$celltypes[i] <- "GMP",
+		ifelse(ctrl.object@meta.data$RNA_snn_res.1[i] %in% "8", ctrl.object@meta.data$celltypes[i] <- "HSPC",
+			ifelse(ctrl.object@meta.data$RNA_snn_res.1[i] %in% "3", ctrl.object@meta.data$celltypes[i] <- "CMP",
+				ifelse(ctrl.object@meta.data$RNA_snn_res.1[i] %in% "9", ctrl.object@meta.data$celltypes[i] <- "CMP-Mkprimed",
+					ifelse(ctrl.object@meta.data$RNA_snn_res.1[i] %in% "4", ctrl.object@meta.data$celltypes[i] <- "MEP-ERP",
+						ifelse(ctrl.object@meta.data$RNA_snn_res.1[i] %in% "7", ctrl.object@meta.data$celltypes[i] <- "MEP",
+							ifelse(ctrl.object@meta.data$RNA_snn_res.1[i] %in% "2", ctrl.object@meta.data$celltypes[i] <- "MEP-MkP",
+								ifelse(ctrl.object@meta.data$RNA_snn_res.1[i] %in% "1", ctrl.object@meta.data$celltypes[i] <- "MkP",
+									ifelse(ctrl.object@meta.data$RNA_snn_res.1[i] %in% "6", ctrl.object@meta.data$celltypes[i] <- "MkP-Mk",
+										ifelse(ctrl.object@meta.data$RNA_snn_res.1[i] %in% "5", ctrl.object@meta.data$celltypes[i] <- "MkP-Mk",
+										  ifelse(ctrl.object@meta.data$RNA_snn_res.1[i] %in% "0", ctrl.object@meta.data$celltypes[i] <- "MEP",
+										    ctrl.object@meta.data$celltypes[i] <- "MkP-Mk")))))))))))
+}
+
+DimPlot(ctrl.object, group.by = "celltypes")
+```
+
+
+
+
+#######################
+##Metadata extraction##
+#######################
+```{r}
+metadata <- as.data.frame(ctrl.object@meta.data)
+
+metadata$UMAP_1 <- ctrl.object@reductions$umap@cell.embeddings[,1]
+metadata$UMAP_2 <- ctrl.object@reductions$umap@cell.embeddings[,2]
+metadata$tSNE_1 <- ctrl.object@reductions$tsne@cell.embeddings[,1]
+metadata$tSNE_2 <- ctrl.object@reductions$tsne@cell.embeddings[,2]
+metadata$PC1 <- ctrl.object@reductions[["pca"]]@cell.embeddings[,1]
+metadata$PC2 <- ctrl.object@reductions[["pca"]]@cell.embeddings[,2]
+
+clusters_res <- ctrl.object[["RNA_snn_res.1.2"]][,1]
+names(clusters_res)=colnames(ctrl.object)
+
+write.table(metadata,
+	    paste(OUTPUT_PATH, "metadata_ctrl_object.txt"),
+	    sep='\t', quote=F, col.names=NA)
+
+```
+
+
+
+
+
+###################################################################################
+##Ggplot for all samples present in the subset dataset and for samples one by one##
+###################################################################################
+
+
+```{r}
+centers=get_cluster_centroids(metadata$UMAP_1,metadata$UMAP_2)
+ggplot(metadata, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=factor(clusters_res)), size=0.5) + scale_colour_manual(values=color_ordered2) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))+
+	geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,
+		  #nudge_y=-1, nudge_x=-1,
+		  size=3)
+
+for(i in sort(unique(metadata$HT0_souporcell_classification))){
+  metadata2 <- metadata[which(metadata$HT0_souporcell_classification == i),]
+  clusters_res <- metadata2$RNA_snn_res.0.8
+  p <- ggplot(metadata2, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=factor(clusters_res)), size=0.5) + scale_colour_manual(values=color_ordered2) +       theme(panel.background = element_rect(fill = 'white', colour = 'black'))+ ggtitle(i) + geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,
+		  #nudge_y=-1, nudge_x=-1,
+		  size=3)
+  plot(p)
+}
+```
+
+## Save the R object
+```{r}
+saveRDS(ctrl.object, file = paste(OUTPUT_PATH, "ctrl_object.rds"))
+```
+
+
+
+###########################################################################################################
+###########################################################################################################
+###########################################################################################################
+################################## PATIENTS OBJECT SEURAT CREATION ########################################
+###########################################################################################################
+###########################################################################################################
+###########################################################################################################
+
+
+
+######################
+##Subset on patients##
+######################
+```{r}
+Idents(ETV6_2020) <- "ETV6status"
+pat.object <- subset(x = ETV6_2020, idents = "Patients")
+DimPlot(pat.object)
+```
+
+## Filtering on total genes detected and cells with too much mitochondrial genes
+```{r}
+pat.object <- subset(pat.object, subset = (nFeature_RNA > 1000 & percent.mt < mito.threshold))
+dim(pat.object)
+```
+
+## Visualize QC metrics as a violin plot
+```{r}
+VlnPlot(pat.object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3,pt.size=0.1, group.by = "sample")
+```
+
+
+#############################
+##Creation of seurat object##
+#############################
+
+## Normalize data
+```{r}
+# standard log-normalization
+pat.object <- NormalizeData(pat.object, normalization.method = "LogNormalize", scale.factor = 10000)
+
+write.table(pat.object@assays$RNA@data,
+	    paste(OUTPUT_PATH, "log_norm_filtered_pat_object.txt", sep=""),
+	    sep="\t", quote=F, col.names=NA)
+```
+
+## Some counts after normalization
+```{r}
+pat.object
+table(pat.object$sample)
+```
+
+## Choose top 1k variable genes
+```{r}
+pat.object <- FindVariableFeatures(object=pat.object, selection.method = "vst", mean.function = ExpMean, dispersion.function = LogVMR, binning.method = "equal_width", num.bin = 20, y.cutoff = 0.5, nfeatures = 1000, verbose=TRUE)
+
+top40 <- head(VariableFeatures(pat.object), 40)
+top100 <- head(VariableFeatures(pat.object), 100)
+```
+
+## Plot variable genes:
+```{r}
+plot1 <- VariableFeaturePlot(pat.object)
+LabelPoints(plot = plot1, points = top40, repel = TRUE)
+```
+
+## Standard scaling (no regression)
+```{r}
+setwd(OUTPUT_PATH)
+all.genes <- rownames(pat.object)
+pat.object <- ScaleData(pat.object, features = all.genes, display.progress = TRUE, do.scale=FALSE, vars.to.regress = c("S.Score","G2M.Score"))
+```
+
+## Run PCA
+```{r}
+pat.object <- RunPCA(pat.object, features = VariableFeatures(object = pat.object), npcs=40, pcs.print = 5, seed.use=42, rev.pca = FALSE)
+```
+
+## Examine PCA results
+```{r}
+Idents(pat.object) <- pat.object@meta.data$sample
+VizDimLoadings(pat.object, dims = 1:2, reduction = "pca")
+DimPlot(pat.object, dims=c(1, 2), reduction = "pca", pt.size=1)
+DimPlot(pat.object, dims=c(3, 4), reduction = "pca", pt.size=1)
+```
+
+## Save PCA coord
+```{r}
+pca_coordinates <- pat.object@reductions$pca@cell.embeddings
+write.table(pca_coordinates,
+	    paste(OUTPUT_PATH, "PCA_coordinates_pat_object.txt"),
+	    sep="\t", quote=F, col.names=NA
+)
+```
+
+## Heatmaps:
+```{r}
+DimHeatmap(pat.object, dims = 1:6, cells = length(colnames(pat.object)), balanced = TRUE)
+DimHeatmap(pat.object, dims = 1, cells = length(colnames(pat.object)), balanced = TRUE)
+```
+
+## JackStraw and ElbowPlot:
+```{r}
+pat.object <- JackStraw(pat.object, num.replicate = 100)
+
+pat.object <- ScoreJackStraw(pat.object, dims = 1:20)
+           
+JackStrawPlot(pat.object, dims = 1:15)
+           
+ElbowPlot(pat.object)
+```
+
+## Perform clustering: 
+```{r}
+pat.object <- FindNeighbors(object = pat.object, k.param = 30, dims = 1:6, compute.SNN = TRUE, prune.SNN = 1/15)
+
+pat.object <- FindClusters(object= pat.object, modularity.fxn = 1,
+             resolution = 0.8, algorithm = 1, n.start = 10, n.iter = 10,
+             random.seed = 42, temp.file.location = NULL, edge.file.name = NULL,
+             verbose = TRUE)
+clusters_res <- pat.object[["RNA_snn_res.0.8"]][,1]
+names(clusters_res)=colnames(pat.object)
+
+write.table(clusters_res,
+	    paste(OUTPUT_PATH, "clusters_res_0.8_pat_object.txt"),
+	    sep="\t", quote=F, col.names=NA)
+```
+
+## Look at PCA results again, with clusters res0.8
+```{r}
+DimPlot(pat.object, dims=c(1, 2), reduction = "pca", pt.size=1)
+DimPlot(pat.object, dims=c(3, 4), reduction = "pca", pt.size=1)
+```
+
+## Run UMAP res0.8: 
+```{r}
+pat.object <- RunUMAP(pat.object, dims = 1:20, umap.method="uwot", seed.use=10, n.components=2, n.neighbors = 30, spread=1, min.dist=0.2)
+DimPlot(pat.object, reduction = "umap", pt.size=0.7, label = TRUE)
+
+# note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+UMAP_coord <- pat.object@reductions$umap@cell.embeddings
+write.table(UMAP_coord,
+	    "UMAP_coordinates_pat_object.txt",
+	    sep="\t", quote=F, col.names=NA
+)
+```
+
+## Run UMAP Cell cycling
+```{r}
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+ 
+pat.object <- CellCycleScoring(pat.object,s.features = s.genes, g2m.features = g2m.genes)
+DimPlot(pat.object,group.by="Phase")+ggtitle("UMAP - Cell cycle")
+```
+
+## Run tSNE: 
+```{r}
+pat.object <- RunTSNE(object= pat.object,  dims = 1:10, dim.embed = 2, seed.use = 42, tsne.method="Rtsne", reduction="pca")
+DimPlot(pat.object, reduction = "tsne", pt.size=0.7, label = TRUE)
+tSNE_coord <- pat.object@reductions$tsne@cell.embeddings
+```
+####################
+##Quality controls##
+####################
+
+## General QC UMAPs
+
+### mitochondrial percentage
+```{r UMAP_mito_QC, echo=FALSE, fig.width=10,fig.height=8}
+### mitochondrial percentage
+UMAP <- data.frame(UMAP_1 = pat.object@reductions$umap@cell.embeddings[,1],
+                   UMAP_2 = pat.object@reductions$umap@cell.embeddings[,2],
+                   gene = pat.object@meta.data$percent.mt)
+
+Mutation = pat.object@meta.data$ETV6status
+Max = max(pat.object@meta.data$percent.mt)
+Min = min(pat.object@meta.data$percent.mt)
+
+ggplot(UMAP,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=gene,shape=Mutation)) + 
+  scale_colour_gradient2(low = "lightgrey",mid="grey",high="red",name="Mitochondrial percentage",midpoint=(Max+Min)/2)
+```
+
+### features
+```{r UMAP_features_QC, echo=FALSE, fig.width=10,fig.height=8}
+UMAP <- data.frame(UMAP_1 = pat.object@reductions$umap@cell.embeddings[,1],
+                   UMAP_2 = pat.object@reductions$umap@cell.embeddings[,2],
+                   gene = pat.object@meta.data$nFeature_RNA)
+
+Mutation = pat.object@meta.data$ETV6status
+Max=max(pat.object@meta.data$nFeature_RNA)
+Min=min(pat.object@meta.data$nFeature_RNA)
+
+ggplot(UMAP,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=gene, shape = Mutation)) + 
+  scale_colour_gradient2(low = "blue",mid="orange",high="red",name="n° of genes expressed",midpoint=(Max+Min)/2)
+```
+
+### mRNA counts
+```{r UMAP_mRNA_QC, echo=FALSE, fig.width=10,fig.height=8}
+UMAP <- data.frame(UMAP_1 = pat.object@reductions$umap@cell.embeddings[,1],
+                   UMAP_2 = pat.object@reductions$umap@cell.embeddings[,2],
+                   gene = pat.object@meta.data$nCount_RNA)
+
+Mutation = pat.object@meta.data$ETV6status
+Max=max(pat.object@meta.data$nCount_RNA)
+Min=min(pat.object@meta.data$nCount_RNA)
+
+ggplot(UMAP,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=gene, shape = Mutation))+
+  scale_colour_gradient2(low = "blue",mid="orange",high="red",name="mRNA count",midpoint=(Max+Min)/2)
+```
+
+```{r save, eval=FALSE}
+#save the seurat object
+saveRDS(pat.object, file = paste0(OUTPUT_PATH, "pat_object.rds"))
+```
+
+
+
+
+############
+##ANALYSIS##
+############
+
+#############################################################
+## Top marker genes by clusters and exclude ribosomal genes##
+#############################################################
+
+```{r}
+ribosomal_genes <- c("RPS17","RPS9","RPS9","RPS9","RPS9","RPS9","RPS9","RPS9","MRPS18B","MRPS18B","MRPS18B","RPS9","RPS18","MRPS36","RPS9","MRPS18B","RPS4Y2","RPS4Y1","RPS25","RPL7A","MRPS6","MRPS18B","RPS18","MRPS18B","RPS18","MRPL57","TBCE","RPS18","MRPS12","MRPS31","RPL3","MRPL23","RPL3L","RPS2","RPL17-C18orf32","RPS4X","RPS13","RPL36","RPS21","RPL21","RPL14","MRPS24","MRPL54","RPS24","RPS15A","RPS6","MRPS25","MRPL36","RPL36AL","MRPS17","MRPL16","MRPS30","FAU","MRPS16","RPS7","RPL23","RPS10","RPL10L","RPL35","RPL17","SRBD1","RPL22","RPL4","MRPS36","RPL37","MRPS2","RPL36A","RPL36A-HNRNPH2","RPL30","MRPL49","RPS19","RPL12","RPS5","RPS27L","RPS29","RPSA","MRPL33","MRPL1","RPS17","RPL10","MRPL13","MRPL19","MRPL15","MRPL41","RPS12","MRPS9","MRPS11","MRPL3","RPL31","RPS3","RPL38","RPL22L1","RPL39","MRPL46","RPL18A","RPL7","RPS3A","RPLP2","RPLP0","RPS16","MRPL23","MRPL22","MRPL18","RPL7L1","MRPL2","MRPS34","MRPS33","RPL28","RPL7A","MRPL4","RPL35A","RPL13","RPL24","RPS20","RPS15","MRPL14","MRPL21","MRPL32","NDUFA7","RPS28","RPL15","RPL18","RPL9","RPL37A","RPS11","MRPS23","MRPL52","MRPL43","MRPS18B","RPLP1","MRPS18A","RSL24D1","RPL27","RPL13A","MRPS14","MRPL47","MRPS35","RPL8","RPL26L1","MRPL11","RPL26","TBCE","RPS27AP5","MRPL34","MRPS12","MRPS5","MRPS18C","RPL29","RPL39L","MRPL28","MRPL51","RPL34","RPL10A","MRPL12","RPL32","RPS14","MRPL35","MRPL17","RPL11","RPS23","RPS9","RPL23A","RPS18","MRPL42","MRPL10","UBA52","DAP3","MRPS7","RPL19","RPS25","RPS26","RPL41","MRPS22","RPL6","RPS8","TBCE","MRPL30","RPS27","RPL27A","MRPS21","MRPL27","MRPL20","MRPL55","MRPL37","RPS27A","MRPL24","RPL5","MRPL9","MRPS15")
+
+ribosomal_genes_filtered <- ribosomal_genes[!duplicated(ribosomal_genes)]
+all.genes_without_ribosomal = setdiff(all.genes, ribosomal_genes_filtered)
+# length(ribosomal_genes)
+# length(ribosomal_genes_filtered)
+# length(all.genes)
+# length(all.genes_without_ribosomal)
+for(i in 0:(max(as.numeric(levels(pat.object@meta.data$seurat_clusters))))) {
+  assign(paste("cluster", i,".markers", sep = ""), FindMarkers(pat.object, features = all.genes_without_ribosomal, ident.1 = i, test.use = "bimod", only.pos = TRUE))
+    print(paste("cluster", i,".markers", sep = ""))
+    print(head(get(paste("cluster", i,".markers", sep = "")),n=50))
+    write.table(get(paste("cluster", i,".markers", sep = "")),
+		paste("cluster", i,"markers_pat_object.txt", sep = "_"),
+		quote=FALSE,row.names = TRUE)
+}
+```
+
+
+
+########################################
+##top 10 DE gene expression by cluster##
+########################################
+
+### table
+Checking most differentially expressed gene with FindAllMarkers in each clusters compared to all others.
+```{r top_DE_table, echo=FALSE, message=FALSE, warning=FALSE}
+# FindAllMarkers
+Idents(pat.object) <- "RNA_snn_res.0.8"
+markers <- FindAllMarkers(pat.object, only.pos = F, min.pct = 0.1, logfc.threshold = 0.2)
+
+# table
+top_genes <- markers %>% group_by(cluster) %>% top_n(20, avg_log2FC)
+write.table(top_genes, file = paste(OUTPUT_PATH, "top20_FAM_pat.csv"))
+datatable(markers, filter = 'top', options = list(pageLength = 20)) %>% formatRound(2:4, 2) %>% formatSignif(c(1,5), digits = 2)
+```
+
+### Heatmap
+```{r Heatmap_pat,  echo=FALSE,  fig.width=10,fig.height=10}
+str_top_genes <- unique(as.character(top_genes$gene))
+DoHeatmap(object = pat.object, features = as.character(top_genes$gene),group.by = "RNA_snn_res.1", group.bar = T, label = T,size = 5, draw.lines = T, lines.width = 10,group.bar.height = 0.02)
+```
+
+### DotPlot
+```{r dotplot_pat, echo=FALSE,  fig.width=10,fig.height=10}
+Idents(pat.object) <- "RNA_snn_res.0.8"
+dp <- DotPlot(pat.object, features = str_top_genes) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis()
+dp
+```
+
+## Signature for identification of population
+Supervised selection of populations based on DE genes and published signatures.
+
+```{r dotplot_supervised, echo=FALSE, message=FALSE,fig.width=10,fig.height=8}
+Idents(pat.object) <- "RNA_snn_res.0.8"
+pat.object@active.ident <- factor(pat.object@active.ident, levels = c("1","0","8","6","2","5","4","10","7","3","9"))
+
+dp <- DotPlot(pat.object, features = c("THY1","PROM1","FLT3","CRHBP","HOPX","AVP","KIT","SPINK2","CSF3R","CPA3","CLC","PRG2","TPSAB1","VWA5A","MPO","ELANE","PRTN3","AZU1","SERPINB10","CTSG","CD38","TFRC","DEPTOR","KLF1","TFR2","HBB","APOC1","ANK1","ACSM3","LMNA","CAVIN2","LAT","CD9","STOM","PLEK","ITGA2B","GP9","GP6","GP1BA","PF4","RASGRP2","MPIG6B","VWF","PPBP","SELP","LTBP1")) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis()
+dp
+```
+
+
+############################################################################
+##Dimensional reduction plot, with cells colored by a quantitative feature##
+############################################################################
+
+```{r echo=FALSE}
+gene_list <- c("PROM1","SPINK2","CD34","KIT","TFRC","PLEK","ITGB3","VWF","ITGA2B","GP9","KLF1","HBB","MPO","SERPINB10","TPSAB1","CPA3","PPBP")
+
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = pat.object, features = gene_list[i], reduction = "umap", cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"), pt.size = 0.7))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+
+```
+
+
+## Feature Plot signatures {.tabset}
+Adding module score (based on published signatures) in meta.data and plotting it with FeaturePlot. Other solutions exist for signatures and shall be considered.
+
+```{r FP_sig, echo=FALSE, fig.width=10,fig.height=8}
+pat.object <- AddModuleScore(pat.object, features = list(c("PROM1","FLT3","CRHBP","HOPX","AVP","IGHM","GLIPR1")),
+name = "HSPC")
+
+pat.object <- AddModuleScore(pat.object, features = list(c("CPA3","PRG2","RHEX","ALOX5AP","MS4A2")),
+name = "CMP")
+pat.object <- AddModuleScore(pat.object, features = list(c("MS4A3","RNASE2","EPX","CLC","CSF2RB","CTSG")),
+name = "non.primed.CMP")
+pat.object <- AddModuleScore(pat.object, features = list(c("LMNA","CAVIN2","LAT","VWA5A","KIT","HPGDS","KRT1","TPSB2","TPSAB1","TMEM176B","SAMSN1","CD44")),
+name = "Mk.primed.CMP")
+
+pat.object <- AddModuleScore(pat.object, features = list(c("CSTA","MPO","ELANE","PRTN3","AZU1","RNASE3","CFD")),
+name = "GMP")
+
+pat.object <- AddModuleScore(pat.object, features = list(c("CD38","KLF1","DEPTOR","ACSM3","APOC1","TFRC","ANK1","TMSB10","ALDH1A1","MT-ATP8","H2AFY","GYPB")),
+name = "MEP")
+pat.object <- AddModuleScore(pat.object, features = list(c("BLVRB","HBB","APOC1","TFR2")),
+name = "MEP_ERP")
+
+pat.object <- AddModuleScore(pat.object, features = list(c("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40")),
+name = "MkP_Mk")
+```
+
+### HSPC
+```{r FP_sig1, echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = pat.object, features = "HSPC1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+```
+
+### CMP
+```{r FP_sig2, echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = pat.object, features = "CMP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+
+FeaturePlot(object = pat.object, features = "Mk.primed.CMP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+
+FeaturePlot(object = pat.object, features = "non.primed.CMP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+```
+
+### GMP
+```{r FP_sig3, echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = pat.object, features = "GMP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+```
+
+### MEP
+```{r FP_sig4, echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = pat.object, features = "MEP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+
+FeaturePlot(object = pat.object, features = "MEP_ERP1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+```
+
+### MkP.Mk
+```{r FP_sig6, echo=FALSE, fig.width=10,fig.height=8}
+FeaturePlot(object = pat.object, features = "MkP_Mk1", reduction = "umap", order = TRUE,
+pt.size = 0.6, cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black")) + NoAxes() +NoLegend()
+```
+
+
+
+########################
+##celltype assignation##
+########################
+
+```{r echo=FALSE}
+# Cell assignation based on signatures & both DotPlots
+Idents(pat.object) <- "RNA_snn_res.0.8"
+pat.object@meta.data$celltypes <- "NA"
+
+for (i in 1:length(rownames(pat.object@meta.data))){
+    if (pat.object@meta.data$RNA_snn_res.2[i] %in% 1){
+      pat.object@meta.data$celltypes[i] <- "MkP_Mk"
+      }
+    if (pat.object@meta.data$RNA_snn_res.2[i] %in% c(0,8,6,2,5)){
+      pat.object@meta.data$celltypes[i] <- "MEP"
+      }
+    if (pat.object@meta.data$RNA_snn_res.2[i] %in% 4){
+      pat.object@meta.data$celltypes[i] <- "CMP"
+      }
+    if (pat.object@meta.data$RNA_snn_res.2[i] %in% 10){
+      pat.object@meta.data$celltypes[i] <- "CMP_Primed"
+      }
+    if (pat.object@meta.data$RNA_snn_res.2[i] %in% 9){
+      pat.object@meta.data$celltypes[i] <- "GMP"
+      }
+    if (pat.object@meta.data$RNA_snn_res.2[i] %in% c(3,7)){
+      pat.object@meta.data$celltypes[i] <- "HSPC"
+      }
+}
+
+# Plotting by celltypes
+DimPlot(object = pat.object,
+        pt.size = 0.7,
+        reduction = "umap",
+        group.by = "celltypes",
+        order = T
+        )
+```
+
+
+
+
+#######################
+##Metadata extraction##
+#######################
+
+```{r}
+metadata <- as.data.frame(pat.object@meta.data)
+
+metadata$UMAP_1 <- pat.object@reductions$umap@cell.embeddings[,1]
+metadata$UMAP_2 <- pat.object@reductions$umap@cell.embeddings[,2]
+metadata$tSNE_1 <- pat.object@reductions$tsne@cell.embeddings[,1]
+metadata$tSNE_2 <- pat.object@reductions$tsne@cell.embeddings[,2]
+metadata$PC1 <- pat.object@reductions[["pca"]]@cell.embeddings[,1]
+metadata$PC2 <- pat.object@reductions[["pca"]]@cell.embeddings[,2]
+
+clusters_res <- pat.object[["RNA_snn_res.1"]][,1]
+names(clusters_res)=colnames(pat.object)
+
+write.table(metadata,
+	    paste(OUTPUT_PATH, "metadata_pat_object.txt"),
+	    sep='\t', quote=F, col.names=NA)
+
+```
+
+
+
+###################################################################################
+##Ggplot for all samples present in the subset dataset and for samples one by one##
+###################################################################################
+
+```{r}
+centers=get_cluster_centroids(metadata$UMAP_1,metadata$UMAP_2)
+ggplot(metadata, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=factor(clusters_res)), size=0.5) + scale_colour_manual(values=color_ordered2) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))+
+	geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,
+		  #nudge_y=-1, nudge_x=-1,
+		  size=3)
+
+for(i in sort(unique(metadata$HT0_souporcell_classification))){
+  metadata2 <- metadata[which(metadata$HT0_souporcell_classification == i),]
+  clusters_res <- metadata2$RNA_snn_res.0.8
+  p <- ggplot(metadata2, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=factor(clusters_res)), size=0.5) + scale_colour_manual(values=color_ordered2) +       theme(panel.background = element_rect(fill = 'white', colour = 'black'))+ ggtitle(i) + geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,
+		  #nudge_y=-1, nudge_x=-1,
+		  size=3)
+  plot(p)
+}
+```
+
+## Save the R object
+```{r}
+saveRDS(pat.object, file = paste(OUTPUT_PATH, "pat_object.rds"))
+```
+
+
+#################
+##Visualization##
+#################
+
+
+
+###########################################################################################################
+###########################################################################################################
+###########################################################################################################
+################################## ETV6_2020 ANALYSIS #####################################################
+###########################################################################################################
+###########################################################################################################
+###########################################################################################################
+
+
+
+
