@@ -2,9 +2,9 @@
 
 Article: Single cell characterization of megakaryopoiesis: new insights into ETV6-related thrombocytopenia
 
-Authors: 
+Authors: Timothée JR Bigot*, Elisa Gabinaud, Laurent Hannouche, Véronique Sbarra, Elisa Andersen, Delphine Potier, Céline Falaise, Manal Ibrahim-Kosta, Marie Loosveld, Paul Saultier, Dominique Payet-Bornet, Marie-Christine Alessi*, Marjorie Poggi 
 
-Appartenances. 
+* Corresponding authors 
 
 Link to the article, first on biorXiv then Pubmed. 
 
