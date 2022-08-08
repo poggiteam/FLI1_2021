@@ -22,7 +22,7 @@ This repository contains instructions and material to reproduce the analysis rep
 
 ### FASTQ preprocessing
 
-  - 8 FASTQ files are available in SRA under the accession number ............
+  - 8 FASTQ files are available in SRA under the accession number ......... (Accessible once published).
     - 4 FASTQ files of paired-end reads sequenced from the mRNA libraries
       - 2 FASTQ files for the 2020-42-set1 mRNA library
       - 2 FASTQ files for the 2020-42-set2 mRNA library
