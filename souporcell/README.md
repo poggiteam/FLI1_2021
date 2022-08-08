@@ -62,8 +62,6 @@ Pre-processed data (CellRanger results) are available on GEO (accession ID : GSE
 	<li>raw mRNA count per cells : </li>
 	<ul>
 		<li>mRNA_barcodes.tsv.gz</li>
-		<li>mRNA_features.tsv.gz</li>
-		<li>mRNA_matrix.mtx.gz</li>
 	</ul>
 </ul>
 If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/Delphine-Potier/B-ALL-CAR-T/tree/master/fastq_pre-processing. <br>
