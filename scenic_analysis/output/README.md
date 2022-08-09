@@ -1,6 +1,6 @@
 # Results
 
-Once the analysis done, you may obtain all the output files in thhis directory:
+Once the analysis done, you may obtain all the output files in this directory:
 <br>
 <ul>
 <li> regulons.p</li>
