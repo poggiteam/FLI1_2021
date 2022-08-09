@@ -59,7 +59,7 @@ Pre-processed data (CellRanger results) are available on GEO (accession ID : GSE
     - https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM4649255
 <ul>
   <li>Binary aligment map (BAM) </li>
-	<li>raw mRNA count per cells : </li>
+	<li>mRNA count per cells : </li>
 	<ul>
 		<li>mRNA_barcodes.tsv.gz</li>
 	</ul>
@@ -70,7 +70,7 @@ If you prefer to perform the fastq data pre-processing, instructions are describ
 
 CaSpER analysis needs 3 inputs (for more details see,https://github.com/wheaton5/souporcell):
 1- BAM file from cellranger output
-2- raw "barcodes.tsv" file from cellranger output (raw)
+2- raw "barcodes.tsv" file from cellranger output
 3- Reference genome GRCh38-2020-A (available on zenodo and on ....)
 
 Run the analysis
