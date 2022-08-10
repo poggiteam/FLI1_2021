@@ -21,42 +21,32 @@ In order to prepare the environment for analysis execution, it is required to:
 <li> Download the singularity images tar file</li> 
 <ul>
 <li> souporcell singularity images : https://zenodo.org/record/4114854/files/BAFExtract.tar?download=1 & https://zenodo.org/record/4114854/files/casperseurat315.tar?download=1</li>
-</ul>
-<li> Load the singularity images on your system</li>  
+</ul> 
 <li> Get the pre-processed data
 <li> Get the reference genome
 </ul>
 
 <b>1) Clone the github repository</b>
 
-Use you favorite method to clone this repository in a chosen folder. This will create a "ETV6_2020" folder with all the source code. You must set an environment variable called WORKING_DIR with a value set to the path to this folder.
+Use you favorite method to clone this repository in a chosen folder. This will create a "ETV6" folder with all the source code. You must set an environment variable called WORKING_DIR with a value set to the path to this folder.
 
 On linux:
-<pre><code>export WORKING_DIR=/enter/here/your/path/ETV6_2020</pre></code>
+<pre><code>export WORKING_DIR=/enter/here/your/path/ETV6</pre></code>
 
 
 
-<b>2) Download the docker images</b>
+<b>2) Download the image</b>
 
 Docker images tar files are stored on Zenodo. Open a shell command and change dir to the root of the cloned Git repository. Then execute the following commands to download the images tar files:
 
 
 <pre><code>wget https://zenodo.org/record/4114854/files/BAFExtract.tar?download=1</pre></code>
 
-<b>3) Load docker images</b>
 
-In order to execute analysis, you must load the provided docker images onto your Singularity. Singularity must be installed on your system. Open a shell command, change dir to the folder in which you cloned the project and type:
-
-<pre><code>docker load -i $WORKING_DIR/Images/docker/dpotier_B-ALL-CAR-T_casper/BAFExtract/BAFExtract.tar</pre></code>
-<pre><code>docker load -i $WORKING_DIR/Images/docker/dpotier_B-ALL-CAR-T_casper/CaSpER/casperseurat315.tar</pre></code>
-
-Those commands may take some time. 
-
-<b>4) Get the pre-processed data</b>
-The pre-processed data is already in github directory you cloned, alternatively, you can:<br>
+<b>3) Get the pre-processed data</b>
+The pre-processed data is already partially in github directory you cloned, you will need to:<br>
 Download or produce the pre-processed data (cellRanger results) <br>
-Pre-processed data (CellRanger results) are available on GEO (accession ID : GSE153697): <br>
-    - https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM4649255
+Pre-processed data (CellRanger results) are available on GEO (accession ID : GSE206089): <br>
 <ul>
   <li>Binary aligment map (BAM) </li>
 	<li>mRNA count per cells : </li>
@@ -64,14 +54,14 @@ Pre-processed data (CellRanger results) are available on GEO (accession ID : GSE
 		<li>mRNA_barcodes.tsv.gz</li>
 	</ul>
 </ul>
-If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/Delphine-Potier/B-ALL-CAR-T/tree/master/fastq_pre-processing. <br>
+If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/ETV6/tree/new_main/preprocessing <br>
 
 ## Run the Souporcell analysis 
 
-CaSpER analysis needs 3 inputs (for more details see,https://github.com/wheaton5/souporcell):
+Souporcell analysis needs 3 inputs (for more details see,https://github.com/wheaton5/souporcell):
 1- BAM file from cellranger output
-2- raw "barcodes.tsv" file from cellranger output
-3- Reference genome GRCh38-2020-A (available on zenodo and on ....)
+2- "barcodes.tsv" file from cellranger output
+3- Reference genome GRCh38-2020-A (available on zenodo)
 
 Run the analysis
 
