@@ -7,7 +7,7 @@ Once the image downloaded, if singularity is installed on your system you can di
 <pre><code>https://zenodo.org/record/4114854/files/cellranger3.0.1.img?download=1 -o $WORKING_DIR/singularity/image/dpotier_B-ALL-CAR-T_Cellranger/cellranger3.0.1.img</pre></code>
 
 #####   Launch the image
-<pre><code>singularity shell cellranger3.0.1.img</pre></code>
+<pre><code>singularity shell cellranger5.img</pre></code>
 <pre><code>bash</pre></code>
 
 You can run the analysis.
