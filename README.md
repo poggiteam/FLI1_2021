@@ -1,12 +1,12 @@
 # ETV6_2020
 
-Article: Single cell characterization of megakaryopoiesis: new insights into ETV6-related thrombocytopenia
+Article: Single-cell analysis of megakaryopoiesis in peripheral CD34+ cells: insights into ETV6-related thrombocytopenia
 
 Authors: Timothée JR Bigot*, Elisa Gabinaud, Laurent Hannouche, Véronique Sbarra, Elisa Andersen, Delphine Potier, Céline Falaise, Manal Ibrahim-Kosta, Marie Loosveld, Paul Saultier, Dominique Payet-Bornet, Marie-Christine Alessi*, Marjorie Poggi 
 
 /*/ Corresponding authors 
 
-Link to the article, first on biorXiv then Pubmed. 
+Link to the article. 
 
 Citation:
 
