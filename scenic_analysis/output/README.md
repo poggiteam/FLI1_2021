@@ -10,6 +10,6 @@ Once the analysis done, you may obtain all the output files in this directory:
 <li> auc_mtx.csv</li>
 </ul>
 
-auc_mtx.csv, is the only file used to make the supplementary figure 3.
+auc_mtx.csv, is the only file used for downstream seurat analysis.
 
 SCENIC output can also be downloaded here at https://zenodo.org/record/4114854/files/SCENIC_output.tar.gz?download=1
