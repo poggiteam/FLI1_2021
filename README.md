@@ -54,4 +54,5 @@ All Docker images are available in Zenodo: link !
 
 ### Figures 
 
-Two scripts are available for download to re-create all figures in the article. 
+Two scripts are available for download to re-create all figures in the article.
+Also you will find two reports of these scripts.
