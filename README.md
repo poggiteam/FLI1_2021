@@ -51,3 +51,7 @@ Seurat html reports containing figures generated in R and Seurat scripts Rmd can
 ### Docker
 
 All Docker images are available in Zenodo: link !
+
+### Figures 
+
+Two scripts are available for download to re-create all figures in the article. 
