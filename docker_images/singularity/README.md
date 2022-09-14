@@ -5,6 +5,10 @@ This directory is made for downloading singularity images you will use to redo t
 Singularity images are available in zenodo:
 <ul>
 preprocessing
-	<li>https://zenodo.org/record/4114854/files/cellranger3.0.1.img?download=1</li>
-	<li>https://zenodo.org/record/4114854/files/citeseq-count1.4.3.img?download=1</li>
+	<li>https://zenodo.org/record/6980009/files/cellranger5.img?download=1</li>
+	<li>https://zenodo.org/record/6980009/files/citeseq-count1.4.3.img?download=1</li>
+</ul>
+<ul>
+souporcell
+	<li>https://zenodo.org/record/6980009/files/souporcell_latest.sif?download=1</li>
 </ul>
