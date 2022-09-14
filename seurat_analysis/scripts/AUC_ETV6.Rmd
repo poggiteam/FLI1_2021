@@ -39,7 +39,7 @@ ETV6_2020[["AUC"]] <- CreateAssayObject(counts = aucmtx[,colnames(ETV6_2020)])
 # Check regulons
 rownames(ETV6_2020@assays$AUC)
 
-saveRDS(ETV6_2020, file = "/home/bigott/workspace/hdd/01_etv6/05_Outputs/06_Février_2022/03_2020-42-set1et2/combined/ETV6_2020_regressed_final.rds")
+saveRDS(ETV6_2020, file = "<WORKING_DIR>/ETV6_2020_regressed_final.rds")
 ```
 
 # Duplicate object
