@@ -12,7 +12,7 @@ To reproduce the analysis, you have to first, prepare the environments (see "Pre
 
 ### Prerequisites (System system & containers and data)
 
-Singularity container images are available in zenodo : https://doi.org/10.5281/zenodo.4114854
+Singularity container images are available in zenodo : https://doi.org/10.5281/zenodo.6980009
 
 In order to prepare the environment for analysis execution, it is required to:
 
@@ -20,7 +20,7 @@ In order to prepare the environment for analysis execution, it is required to:
 <li> Clone the github repository and set the WORKING_DIR environment variable</li> 
 <li> Download the singularity images tar file</li> 
 <ul>
-<li> souporcell singularity images : https://zenodo.org/record/4114854/files/BAFExtract.tar?download=1 & https://zenodo.org/record/4114854/files/casperseurat315.tar?download=1</li>
+<li> souporcell singularity images : https://zenodo.org/record/6980009/files/souporcell_latest.sif?download=1</li>
 </ul> 
 <li> Get the pre-processed data
 <li> Get the reference genome
@@ -28,10 +28,10 @@ In order to prepare the environment for analysis execution, it is required to:
 
 <b>1) Clone the github repository</b>
 
-Use you favorite method to clone this repository in a chosen folder. This will create a "ETV6" folder with all the source code. You must set an environment variable called WORKING_DIR with a value set to the path to this folder.
+Use you favorite method to clone this repository in a chosen folder. This will create a "ETV6_2020" folder with all the source code. You must set an environment variable called WORKING_DIR with a value set to the path to this folder.
 
 On linux:
-<pre><code>export WORKING_DIR=/enter/here/your/path/ETV6</pre></code>
+<pre><code>export WORKING_DIR=/enter/here/your/path/</pre></code>
 
 
 
@@ -40,7 +40,7 @@ On linux:
 Docker images tar files are stored on Zenodo. Open a shell command and change dir to the root of the cloned Git repository. Then execute the following commands to download the images tar files:
 
 
-<pre><code>wget https://zenodo.org/record/4114854/files/BAFExtract.tar?download=1</pre></code>
+<pre><code>wget https://zenodo.org/record/6980009/files/souporcell_latest.sif?download=1</pre></code>
 
 
 <b>3) Get the pre-processed data</b>
@@ -54,21 +54,22 @@ Pre-processed data (CellRanger results) are available on GEO (accession ID : GSE
 		<li>mRNA_barcodes.tsv.gz</li>
 	</ul>
 </ul>
-If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/ETV6/tree/new_main/preprocessing <br>
+If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/ETV6_2020/preprocessing <br>
 
 ## Run the Souporcell analysis 
 
-Souporcell analysis needs 3 inputs (for more details see,https://github.com/wheaton5/souporcell):
+Souporcell analysis needs 3 inputs that you have to download in "souporcell/data/" (for more details see,https://github.com/wheaton5/souporcell):
 1- BAM file from cellranger output
 2- "barcodes.tsv" file from cellranger output
-3- Reference genome GRCh38-2020-A (available on zenodo)
+3- Reference genome GRCh38-2020-A (available on zenodo : https://zenodo.org/record/6980009/files/refdata-gex-GRCh38-2020-A.tar.gz
+?download=1)
 
 Run the analysis
 
-<pre><code>$WORKING_DIR/singularity exec souporcell_latest.sif souporcell_pipeline.py -i $WORKING_DIR/possorted_genome_bam.bam -b $WORKING_DIR/seurat_analysis/data/mRNA/raw/barcodes.tsv -f $WORKING_DIR/GRCh38-2020-A.fa -o $WORKING_DIR/souporcell_outputs/ -k 4 -t 20</pre></code>
+<pre><code>$WORKING_DIR/singularity exec souporcell_latest.sif souporcell_pipeline.py -i $WORKING_DIR/ETV6_2020/souporcell/data/possorted_genome_bam.bam -b $WORKING_DIR/seurat_analysis/data/mRNA/raw/barcodes.tsv -f $WORKING_DIR/ETV6_2020/souporcell/data/GRCh38-2020-A.fa -o $WORKING_DIR/ETV6_2020/souporcell/souporcell_outputs/ -k 4 -t 20</pre></code>
 
 
 ##### Ouputs
 
-Once the analysis done, the results should be in you $WORKING_DIR/souporcell_outputs/ folder. Seurat analysis will use "clusters.tsv" as only souporcell input.
+Once the analysis done, the results should be in you $WORKING_DIR/ETV6_2020/souporcell/souporcell_outputs/ folder. Seurat analysis will use "clusters.tsv" as only souporcell input.
 This .tsv, result file is already present in the github output directory. Produced souporcell outputs objects will also be saved to this folder.
