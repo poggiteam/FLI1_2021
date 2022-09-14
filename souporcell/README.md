@@ -51,14 +51,14 @@ Pre-processed data (CellRanger results) are available on GEO (accession ID : GSE
   <li>Binary aligment map (BAM) </li>
 	<li>mRNA count per cells : </li>
 	<ul>
-		<li>mRNA_barcodes.tsv.gz</li>
+	<li>mRNA_barcodes.tsv.gz</li>
 	</ul>
 </ul>
 If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/ETV6_2020/preprocessing <br>
 
 ## Run the Souporcell analysis 
 
-Souporcell analysis needs 3 inputs that you have to download in "souporcell/data/" (for more details see,https://github.com/wheaton5/souporcell):
+Souporcell analysis needs 3 inputs (for more details see,https://github.com/wheaton5/souporcell):
 1- BAM file from cellranger output
 2- "barcodes.tsv" file from cellranger output
 3- Reference genome GRCh38-2020-A (available on zenodo : https://zenodo.org/record/6980009/files/refdata-gex-GRCh38-2020-A.tar.gz
@@ -66,7 +66,7 @@ Souporcell analysis needs 3 inputs that you have to download in "souporcell/data
 
 Run the analysis
 
-<pre><code>$WORKING_DIR/singularity exec souporcell_latest.sif souporcell_pipeline.py -i $WORKING_DIR/ETV6_2020/souporcell/data/possorted_genome_bam.bam -b $WORKING_DIR/seurat_analysis/data/mRNA/raw/barcodes.tsv -f $WORKING_DIR/ETV6_2020/souporcell/data/GRCh38-2020-A.fa -o $WORKING_DIR/ETV6_2020/souporcell/outputs/ -k 4 -t 20</pre></code>
+<pre><code>$WORKING_DIR/singularity exec souporcell_latest.sif souporcell_pipeline.py -i $WORKING_DIR/ETV6_2020/.../possorted_genome_bam.bam -b $WORKING_DIR/seurat_analysis/data/mRNA/raw/barcodes.tsv -f $WORKING_DIR/ETV6_2020/.../GRCh38-2020-A.fa -o $WORKING_DIR/ETV6_2020/souporcell/outputs/ -k 4 -t 20</pre></code>
 
 
 ##### Ouputs
