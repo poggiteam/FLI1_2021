@@ -57,8 +57,8 @@ library(remotes)
 
 
 ```{r}
-INPUT_PATH <- "/home/hannouchel/workspace//ETV6/04_data/2020-42-set1-set2-Figure-Tim/ETV6_radarplot_fig/2e_essai_after_souporcell_processing/input"
-OUTPUT_PATH <- "/home/hannouchel/workspace/ETV6/04_data/2020-42-set1-set2-Figure-Tim/Trajectoires"
+INPUT_PATH <- "<WORKING_DIR>/03_2020-42-set1et2/"
+OUTPUT_PATH <- "<WORKING_DIR>/03_2020-42-set1et2/outputs/"
 ```
 
 
