@@ -1,6 +1,6 @@
 <h2>This image contains</h2>
 <ul><li>Rstudio v4.1.2</li>
-<li>Seurat v4.1</li>
+<li>Seurat v4.0.5</li>
 <li>Various packages (check the docker file for more infos)</li></ul>
 
 
@@ -12,7 +12,7 @@
 
 #####   Download the image
 
-<pre><code>wget https://zenodo.org/record/4114854/files/seurat301.tar?download=1 -o $WORKING_DIR/Images/docker/dpotier_B-ALL-CAR-T_seurat/seurat301.tar</pre></code>
+<pre><code>wget https://zenodo.org/record/6980009/files/Seurat4.tar?download=1 -o $WORKING_DIR/ETV6_2020/docker_images/docker/seurat/Seurat4.tar</pre></code>
 
 #####   Load the image
 <pre><code>docker load < Seurat4.tar</pre></code>
@@ -22,10 +22,10 @@
 
 #####   Compile the image
 For this step you will also need a userconf.sh file.
-<pre><code>docker build -t Seurat4 <WORKING_DIR>ETV6/docker_images/docker/seurat/</pre></code>
+<pre><code>docker build -t Seurat4 <WORKING_DIR>ETV6_2020/docker_images/docker/seurat/</pre></code>
 
 #####   Save the image
-<pre><code>docker save Seurat4 ><WORKING_DIR>/ETV6/docker_images/docker/seurat/Seurat4.tar</pre></code>
+<pre><code>docker save Seurat4 ><WORKING_DIR>/ETV6_2020/docker_images/docker/seurat/Seurat4.tar</pre></code>
 </ul>
 
 
