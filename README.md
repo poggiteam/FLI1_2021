@@ -43,15 +43,15 @@ Seurat scripts Rmd can be download on this repository
 
 ### SCENIC analysis 
 
-  - pySCENIC analysis output is available on Zenodo: link ! 
+  - pySCENIC analysis output is available on Zenodo: https://zenodo.org/record/6980009/files/SCENIC_outputs.tar?download=1 
   - python notebook to reproduce analysis is available on this repository
-  - Docker container is available on Zenodo: link ! 
+  - Docker container is available on Zenodo: https://zenodo.org/record/6980009/files/Seurat4.tar?download=1
   - Instructions to reproduce analysis are available under "scenic_analysis" repository
 
 ### Images
 
-All images are available in Zenodo: link !
+All images are available in Zenodo: https://zenodo.org/record/6980009
 
 ### Figures 
 
-Two scripts are available for download to re-create all R-computed figures in the article.
+Two scripts are available for download in "script_figures" to re-create all R-computed figures in the article.
