@@ -39,7 +39,7 @@ This repository contains instructions and material to reproduce the analysis rep
 
 ### Seurat analysis 
 
-Seurat html reports containing figures generated in R and Seurat scripts Rmd can be download on this repository
+Seurat scripts Rmd can be download on this repository
 
 ### SCENIC analysis 
 
@@ -48,11 +48,10 @@ Seurat html reports containing figures generated in R and Seurat scripts Rmd can
   - Docker container is available on Zenodo: link ! 
   - Instructions to reproduce analysis are available under "scenic_analysis" repository
 
-### Docker
+### Images
 
-All Docker images are available in Zenodo: link !
+All images are available in Zenodo: link !
 
 ### Figures 
 
 Two scripts are available for download to re-create all R-computed figures in the article.
-Also you will find two reports of these scripts.
