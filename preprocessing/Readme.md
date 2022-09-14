@@ -15,15 +15,15 @@ To reproduce the analysis, you have to first, prepare the environments (see "Pre
 ### Prerequisites
 
 Docker container images are available in zenodo : 
-<li>CellRanger : ...... </li>
-<li>CITE-seq-Count : ........ </li>
+<li>CellRanger : https://zenodo.org/record/6980009/files/cellranger5.img?download=1 </li>
+<li>CITE-seq-Count : https://zenodo.org/record/6980009/files/citeseq-count1.4.3.img?download=1 </li>
 
 Raw fastq files are available in SRA (....) 
-Transcriptome is available at 10xGenomics website (https://cf.10xgenomics.com/supp/cell-exp/refdata-cellranger-GRCh38-3.0.0.tar.gz) and in Zenodo ()
+Transcriptome is available at 10xGenomics website (https://cf.10xgenomics.com/supp/cell-exp/refdata-gex-GRCh38-2020-A.tar.gz) and in Zenodo (https://zenodo.org/record/6980009/files/refdata-gex-GRCh38-2020-A.tar.gz?download=1)
 
 <pre><code>
 #Download the transcriptome files
-wget https://zenodo.org/record/
+wget https://zenodo.org/record/6980009/files/refdata-gex-GRCh38-2020-A.tar.gz?download=1
 </pre></code>
 
 <br>
@@ -33,8 +33,8 @@ In order to prepare the environment for analysis execution, it is required to:
 	<li> Clone the github repository and set the WORKING_DIR </li> 
 	<li> Download the singularity images</li> 
 		<ul>
-			<li>CITE-seq-count singularity image : https://zenod (to use with HTO fastq files)</li> 
-			<li>CellRanger singularity image : https://zeno (to use with mRNA fastq files)</li> 
+			<li>CITE-seq-count singularity image : https://zenodo.org/record/6980009/files/citeseq-count1.4.3.img?download=1 (to use with HTO fastq files)</li> 
+			<li>CellRanger singularity image : https://zenodo.org/record/6980009/files/cellranger5.img?download=1 (to use with mRNA fastq files)</li> 
 		</ul>
 	<li> Load the singularity image you need on your system</li> 
 	<li> Download the 8 fastq files</li> 
@@ -46,14 +46,14 @@ Use you favorite method to clone this repository in a chosen folder. This will c
 You must set an environment variable called WORKING_DIR with a value set to the path to this folder.
 
 On linux:
-<pre><code>export WORKING_DIR=/enter/your/path/here/ETV6_2020</pre></code>
+<pre><code>export WORKING_DIR=/enter/your/path/here</pre></code>
 
 <h3>2) Download the singularity images</h3>
 Singularity images are stored on Zenodo. Open a shell command and change dir to the root of the cloned Git repository. Then execute the following commands to download the images tar files to the right project folder:
 
-<pre><code>wget https:/?download=1 
+<pre><code>wget https://zenodo.org/record/6980009/files/cellranger5.img?download=1 
 
-wget https://zenodo.org/recordownload=1 </pre></code>
+wget https://zenodo.org/record/6980009/files/citeseq-count1.4.3.img?download=1 </pre></code>
 
 
 <h3>3) Launch singularity image</h3>
@@ -62,7 +62,7 @@ In order to execute analysis, you must first launch the singularity image you wa
 
 
 <h3>4) Download the FASTQ files </h3>
-Fastq files available on SRA (accession ID : GSE206089 / .....) can be processed with CellRanger (mRNA) or CITE-seq-count (HTO).
+Fastq files available on SRA (accession ID : .......) can be processed with CellRanger (mRNA) or CITE-seq-count (HTO).
 
 ## Run the analysis 
  
@@ -93,15 +93,15 @@ To run the cellranger analysis, ensure you have correctly downloaded the fastq f
 
 <pre><code>
 # Launch singularity image
-singularity shell <WORKING_DIR>/ETV6/docker_images/singularity/cellranger/cellranger5.img
+singularity shell <WORKING_DIR>/ETV6_2020/docker_images/singularity/cellranger/cellranger5.img
 
 bash
 
 # Go to the ouput directory
-cd <WORKING_DIR>/ETV6/preprocessing/output
+cd <WORKING_DIR>/ETV6_2020/preprocessing/output
 
 #Run cellranger
-/usr/local/share/cellranger/cellranger-5/cellranger count --id=ETV6_2020-42-set1-GRCh38 --transcriptome=../data/cellranger_GRCh38/refdata-cellranger-GRCh38-3.0.0/  --fastq=../data/ --sample=mRNA --expect-cell=10000
+cellranger count --id=ETV6_2020-42-set1-GRCh38 --transcriptome=../data/cellranger_GRCh38/refdata-cellranger-GRCh38-2020-A/  --fastq=../data/ --sample=mRNA --expect-cell=10000
 
 </pre></code>
 
@@ -139,23 +139,25 @@ To run the CITE-seq-count analysis, ensure you have correctly downloaded the fas
 
 <pre><code># Get barcodes list from cell ranger. 
 # this file is already present in the data directory, if you want to reproduce it use (else skip it) :
-zcat <WORKING_DIR>/ETV6/preprocessing/ETV6_2020-42-set1_GRCh38/outs/raw_feature_bc_matrix/barcodes.tsv.gz ><WORKING_DIR>/ETV6/preprocessing/data/barcodes_cellranger_nofilter_2020-42-set1.tsv
+zcat <WORKING_DIR>/ETV6_2020/preprocessing/ETV6_2020-42-set1_GRCh38/outs/raw_feature_bc_matrix/barcodes.tsv.gz ><WORKING_DIR>/ETV6_2020/preprocessing/data/barcodes_cellranger_nofilter_2020-42-set1.tsv
 
 # Go to the image directory 
-cd <WORKING_DIR>/ETV6/docker_images/singularity/CITE-seq-count/
+cd <WORKING_DIR>/ETV6_2020/docker_images/singularity/CITE-seq-count/
 
 # Start the image
-singularity shell CITEseq-count1.4.3.img
+singularity shell citeseq-count1.4.3.img
 
 bash
 
 # Go to the ouput directory
-cd <WORKING_DIR>/ETV6/preprocessing/output
+cd <WORKING_DIR>/ETV6_2020/preprocessing/output
 
 # Run CITE-seq-count
-CITE-seq-Count -R1 <WORKING_DIR>/ETV6/preprocessing/data/S000001_HTO_S1_L001_R1_001.fastq.gz -R2 <WORKING_DIR>/B-ALL-CAR-T/0_fastq_pre-processing/data/S000001_HTO_S1_L001_R2_001.fastq.gz -t <WORKING_DIR>/ETV6/preprocessing/data/HTO_tags.csv -cbf 1 -cbl 16 -umif 17 -umil 26 --max-errors 2 --whitelist <WORKING_DIR>/ETV6/preprocessing/data/barcodes_cellranger_nofilter_2020-42-set1.tsv -cell 40000 -T 12 -o CITE-seq-count143_output
+CITE-seq-Count -R1 <WORKING_DIR>/ETV6_2020/preprocessing/data/S000001_HTO_S1_L001_R1_001.fastq.gz -R2 <WORKING_DIR>/ETV6_2020/preprocessing/data/S000001_HTO_S1_L001_R2_001.fastq.gz -t <WORKING_DIR>/ETV6_2020/preprocessing/data/HTO_tags.csv -cbf 1 -cbl 16 -umif 17 -umil 26 --max-errors 2 --whitelist <WORKING_DIR>/ETV6_2020/preprocessing/data/barcodes_cellranger_nofilter_2020-42-set1.tsv -cell 40000 -T 12 -o CITE-seq-count143_output
 </pre></code>
 
 <b>Results</b>
 
-Once the analysis done, you should get result files in the <WORKING_DIR>/ETV6/preprocessing/output folder (with the newly created "CITE-seq-count143_output" folder)
+Once the analysis done, you should get result files in the <WORKING_DIR>/ETV6_2020/preprocessing/output folder (with the newly created "CITE-seq-count143_output" folder)
+
+You need to perform these analyses for each run (2020-42-set1 et 2020-42-set2).
