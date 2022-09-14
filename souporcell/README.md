@@ -66,10 +66,10 @@ Souporcell analysis needs 3 inputs that you have to download in "souporcell/data
 
 Run the analysis
 
-<pre><code>$WORKING_DIR/singularity exec souporcell_latest.sif souporcell_pipeline.py -i $WORKING_DIR/ETV6_2020/souporcell/data/possorted_genome_bam.bam -b $WORKING_DIR/seurat_analysis/data/mRNA/raw/barcodes.tsv -f $WORKING_DIR/ETV6_2020/souporcell/data/GRCh38-2020-A.fa -o $WORKING_DIR/ETV6_2020/souporcell/souporcell_outputs/ -k 4 -t 20</pre></code>
+<pre><code>$WORKING_DIR/singularity exec souporcell_latest.sif souporcell_pipeline.py -i $WORKING_DIR/ETV6_2020/souporcell/data/possorted_genome_bam.bam -b $WORKING_DIR/seurat_analysis/data/mRNA/raw/barcodes.tsv -f $WORKING_DIR/ETV6_2020/souporcell/data/GRCh38-2020-A.fa -o $WORKING_DIR/ETV6_2020/souporcell/outputs/ -k 4 -t 20</pre></code>
 
 
 ##### Ouputs
 
-Once the analysis done, the results should be in you $WORKING_DIR/ETV6_2020/souporcell/souporcell_outputs/ folder. Seurat analysis will use "clusters.tsv" as only souporcell input.
+Once the analysis done, the results should be in you $WORKING_DIR/ETV6_2020/souporcell/outputs/ folder. Seurat analysis will use "clusters.tsv" as only souporcell input.
 This .tsv, result file is already present in the github output directory. Produced souporcell outputs objects will also be saved to this folder.
