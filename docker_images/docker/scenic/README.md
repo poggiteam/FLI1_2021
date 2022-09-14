@@ -1,6 +1,6 @@
 <h2>This image contains</h2>
-<ul><li>pySCENIC</li>
-<li>Jupyter </li></ul>
+<ul><li>pySCENIC version 0.11.2</li>
+<li>Jupyter Notebook </li></ul>
 
 
 
@@ -11,7 +11,7 @@
 
 #####   Download the image
 
-<pre><code>wget https://zenodo.org/record/4114854/files/jupyscenic2.tar?download=1 -o $WORKING_DIR/Images/docker/dpotier_B-ALL-CAR-T_scenic/jupyscenic2.tar</pre></code>
+<pre><code>wget https://zenodo.org/record/6980009/files/pyscenic0112.tar?download=1 -o $WORKING_DIR/ETV6_2020/docker_images/docker/scenic/pyscenic0112.tar</pre></code>
 
 #####   Load the image
 <pre><code>docker load < pyscenic0112.tar</pre></code>
@@ -20,10 +20,10 @@
 <ul><li>use the docker file to produce your own with the following steps : </b></li>
 
 #####   Compile the image
-<pre><code>docker build -t scenic <WORKING_DIR>/ETV6/docker_images/docker/scenic</pre></code>
+<pre><code>docker build -t scenic <WORKING_DIR>/ETV6_2020/docker_images/docker/scenic</pre></code>
 
 #####   Save the image
-<pre><code>docker save scenic ><WORKING_DIR>/ETV6/docker_images/docker/scenic/pyscenic0112.tar</pre></code>
+<pre><code>docker save scenic ><WORKING_DIR>/ETV6_2020/docker_images/docker/scenic/pyscenic0112.tar</pre></code>
 </ul>
 
 <h3>2- RUN THE IMAGE</h3>
