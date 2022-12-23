@@ -669,16 +669,109 @@ rm(tmp)
 
 ## Panel C
 ```{r,fig.height=10,fig.width=10}
+#Load SCENIC output to add to the Seurat object
+# If you ran yourself the SCENIC analysis, you produced your own file so you can change the data folder to :
+#DATA_FOLDER="<WORKING_DIR>/scenic_analysis/outputs/"
 
+aucmtx = t(read.table(file = paste0(DATA_FOLDER, "auc_mtx.csv"), sep = ',', header = F, row.names = 1))
+rownames(aucmtx) <- aucmtx[,1]
+
+### Adding AUC
+# Add AUC data as a new assay independent from RNA
+ETV6_2020[["AUC"]] <- CreateAssayObject(counts = aucmtx[,colnames(ETV6_2020)])
+
+# Check regulons
+rownames(ETV6_2020@assays$AUC)
+
+# Duplicate object
+auc_ETV6_2020 <- ETV6_2020
+cat(names(ETV6_2020), sep="\n")
+cat(names(auc_ETV6_2020), sep="\n")
+
+auc_ETV6_2020@meta.data$celltypes <- factor(auc_ETV6_2020@meta.data$celltypes, levels = c("HSPC","CMP","CMP_Primed","GMP","MEP","MkP_Mk","Plt"))
+
+# UMAP plotting
+coordinates <- uwot::umap(X = t(as.matrix(auc_ETV6_2020@assays$AUC@counts)), n_neighbors = 20, n_components = 2, metric = "cosine", scale = NULL, min_dist = 0.1)
+
+# Visualization ggplot
+df <- data.frame(cells = rownames(auc_ETV6_2020@meta.data),
+                 UMAP_1 = coordinates[,1],
+                 UMAP_2 = coordinates[,2],
+                 # UMAP_3 = coordinates[,3],
+                 ETV6status = auc_ETV6_2020@meta.data$ETV6status,
+                 celltypes = auc_ETV6_2020@meta.data$celltypes
+                 )
+
+myColors <- c("#04BF68","#F26D6D","#CD9600","#7CAE00","#05AFF2","#CC88FF","#F25ECB")
+
+# All dataset UMAP with celltype (defined in "RNA" assay)
+ggplot(df, aes(x = UMAP_1, y = UMAP_2, col = celltypes)) +
+  geom_point(size = .7, alpha = 1) +
+  scale_color_manual(values = myColors) + 
+  theme_classic()
+
+# Controls cells only
+df_ctrl <- df[df$ETV6status == "Controls",]
+
+ggplot(df_ctrl, aes(x = UMAP_1, y = UMAP_2, col = celltypes)) +
+  geom_point(size = .7, alpha = 1) +
+  scale_color_manual(values = myColors) +
+  theme_classic()
+  
+# Patients cells only
+df_pat <- df[df$ETV6status == "Patients",]
+
+ggplot(df_pat, aes(x = UMAP_1, y = UMAP_2, col = celltypes)) +
+  geom_point(size = .7, alpha = 1) +
+  scale_color_manual(values = myColors) +
+  theme_classic()
 ```
 
-
-# Figure 6 {.tabset}
-```{r, include=FALSE}
-ETV6_2020@meta.data$celltypes_ETV6status <- paste(ETV6_2020@meta.data$ETV6status,
-                                                  ETV6_2020@meta.data$celltypes,
+## Panel D
+```{r,fig.height=10,fig.width=10}
+# Top 20 regulons activities comparison
+## creating metadata "celltypes_ETV6status"
+auc_ETV6_2020@meta.data$celltypes_ETV6status <- paste(auc_ETV6_2020@meta.data$ETV6status,
+                                                  auc_ETV6_2020@meta.data$celltypes,
                                                   sep = "_"
                                                   )
+
+# Comparing AUC activities for patients versus controls in every celltypes 
+Idents(auc_ETV6_2020) <- "celltypes_ETV6status"
+list_tmp <- c(unique(auc_ETV6_2020@meta.data$celltypes))
+
+for (i in list_tmp[1:length(list_tmp)]){
+  if(i != "Plt"){
+    if(file.exists(paste0(OUTPUT_PATH,paste0("celltype_", i,".reg_ETV6_2020_full.csv")))){
+       assign(paste0("celltype_", i,".reg"),read.csv(paste0(OUTPUT_PATH,paste0("celltype_", i,".reg_ETV6_2020_full.csv"))))}
+    else{
+      assign(paste0("celltype_", i,".reg"), FindMarkers(auc_ETV6_2020,assay = "AUC", ident.1 = paste("Patients", i, sep = "_"), ident.2 = paste("Controls", i, sep = "_"), only.pos = F, test.use = "wilcox", logfc.threshold = 0, min.pct = 0))
+      print(paste0("celltype_", i,".reg"))
+      print(head(get(paste0("celltype_", i,".reg")),n=50))
+      write.table(get(paste0("celltype_", i,".reg")),
+                  paste0(OUTPUT_PATH, "celltype_", i,".reg_ETV6_2020_full.csv"), sep = ",", quote = F)}
+  }
+}
+
+# Heatmaps auc_ETV6_2020 analysis
+## Selecting Top 20 genes per cluster and making a list of it
+for (i in list_tmp[1:length(list_tmp)]) {
+   if(i != "Plt"){
+     assign(paste0("celltype_", i,".top20"),rownames(get(paste0("celltype_", i,".reg")) %>% top_n(20, avg_log2FC)))
+     write.table(get(paste0("celltype_", i,".reg")),
+                  paste0(OUTPUT_PATH, "celltype_", i,".reg_ETV6_2020_top20.csv"), sep = ",", quote = F)
+     }
+}
+
+## Heatmaps
+DoHeatmap(auc_ETV6_2020, features = celltype_MkP_Mk.top20, group.by = "celltypes_ETV6status", assay = "AUC", slot = "scale.data", raster = F, cells = rownames(auc_ETV6_2020@meta.data[auc_ETV6_2020@meta.data$celltypes == "MkP_Mk",])) + scale_fill_gradientn(colors = c("blue","white","red"))
+
+DoHeatmap(auc_ETV6_2020, features = celltype_MEP.top20, group.by = "celltypes_ETV6status", assay = "AUC", slot = "scale.data",raster = F, cells = rownames(auc_ETV6_2020@meta.data[auc_ETV6_2020@meta.data$celltypes == "MEP",])) + scale_fill_gradientn(colors = c("blue","white","red"))
+```
+
+# Figure 6 {.tabset}
+## Panel A {.tabset}
+```{r,fig.height=10,fig.width=10}
 Idents(ETV6_2020) <- "celltypes_ETV6status"
 
 all.genes <- rownames(ETV6_2020)
@@ -696,20 +789,9 @@ for (i in list_tmp[1:length(list_tmp)]){
                   paste(OUTPUT_PATH, "celltype_", i,"_markers_ETV6_2020_full.csv", sep = ""), sep = ",", quote = F)}
   }
 }
-```
 
-## Panel A
-* HSPC
-```{r}
-# HSPCs
+### HSPCs
 celltypeHSPC.markers_volcano$Significant <- ifelse(celltypeHSPC.markers_volcano$p_val_adj < 0.05&celltypeHSPC.markers_volcano$avg_log2FC > 0.37 | celltypeHSPC.markers_volcano$p_val_adj < 0.05 & celltypeHSPC.markers_volcano$avg_log2FC < -0.37,
-                                                   ifelse(celltypeHSPC.markers_volcano$avg_log2FC > 0,
-                                                          "Upregulated bimod < 0.05",
-                                                          "Downregulated bimod < 0.05"),
-                                                   "Not Significative"
-                                                   )
-
-celltypeHSPC.markers_volcano$Significant2 <- ifelse(celltypeHSPC.markers_volcano$p_val_adj < 0.05&celltypeHSPC.markers_volcano$avg_log2FC > 1 | celltypeHSPC.markers_volcano$p_val_adj < 0.05 & celltypeHSPC.markers_volcano$avg_log2FC < -1,
                                                    ifelse(celltypeHSPC.markers_volcano$avg_log2FC > 0,
                                                           "Upregulated bimod < 0.05",
                                                           "Downregulated bimod < 0.05"),
@@ -722,11 +804,6 @@ celltypeHSPC.markers_volcano$genename <- rownames(celltypeHSPC.markers_volcano)
 length(rownames(celltypeHSPC.markers_volcano[celltypeHSPC.markers_volcano$Significant == "Upregulated bimod < 0.05",]))
 # number of genes downregulated (< -1.3 FC)
 length(rownames(celltypeHSPC.markers_volcano[celltypeHSPC.markers_volcano$Significant == "Downregulated bimod < 0.05",]))
-# number of genes upregulated (> 2 FC)
-length(rownames(celltypeHSPC.markers_volcano[celltypeHSPC.markers_volcano$Significant2 == "Upregulated bimod < 0.05",]))
-# number of genes downregulated (< -2 FC)
-length(rownames(celltypeHSPC.markers_volcano[celltypeHSPC.markers_volcano$Significant2 == "Downregulated bimod < 0.05",]))
-
 
 ggplot(celltypeHSPC.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj))) +
   geom_point(aes(color = Significant))+
@@ -744,20 +821,9 @@ ggplot(celltypeHSPC.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj)))
     size = 3.4,
     box.padding = unit(0.25, "lines"),
     point.padding = unit(0.25, "lines"))
-```
 
-## Panel B
-* CMP
-```{r}
-# CMPs
+### CMP
 celltypeCMP.markers_volcano$Significant <- ifelse(celltypeCMP.markers_volcano$p_val_adj < 0.05&celltypeCMP.markers_volcano$avg_log2FC > 0.37 | celltypeCMP.markers_volcano$p_val_adj < 0.05 & celltypeCMP.markers_volcano$avg_log2FC < -0.37,
-                                                   ifelse(celltypeCMP.markers_volcano$avg_log2FC > 0,
-                                                          "Upregulated bimod < 0.05",
-                                                          "Downregulated bimod < 0.05"),
-                                                   "Not Significative"
-                                                   )
-
-celltypeCMP.markers_volcano$Significant2 <- ifelse(celltypeCMP.markers_volcano$p_val_adj < 0.05&celltypeCMP.markers_volcano$avg_log2FC > 1 | celltypeCMP.markers_volcano$p_val_adj < 0.05 & celltypeCMP.markers_volcano$avg_log2FC < -1,
                                                    ifelse(celltypeCMP.markers_volcano$avg_log2FC > 0,
                                                           "Upregulated bimod < 0.05",
                                                           "Downregulated bimod < 0.05"),
@@ -770,10 +836,6 @@ celltypeCMP.markers_volcano$genename <- rownames(celltypeCMP.markers_volcano)
 length(rownames(celltypeCMP.markers_volcano[celltypeCMP.markers_volcano$Significant == "Upregulated bimod < 0.05",]))
 # number of genes downregulated (< -1.3 FC)
 length(rownames(celltypeCMP.markers_volcano[celltypeCMP.markers_volcano$Significant == "Downregulated bimod < 0.05",]))
-# number of genes upregulated (> 2 FC)
-length(rownames(celltypeCMP.markers_volcano[celltypeCMP.markers_volcano$Significant2 == "Upregulated bimod < 0.05",]))
-# number of genes downregulated (< -2 FC)
-length(rownames(celltypeCMP.markers_volcano[celltypeCMP.markers_volcano$Significant2 == "Downregulated bimod < 0.05",]))
 
 ggplot(celltypeCMP.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj))) +
   geom_point(aes(color = Significant))+
@@ -790,20 +852,9 @@ ggplot(celltypeCMP.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj))) 
     size = 3.4,
     box.padding = unit(0.25, "lines"),
     point.padding = unit(0.25, "lines"))
-```
 
-## Panel C
-* CMP_Primed
-```{r}
-# CMP_Primed
+### CMP_Primed
 celltypeCMP_Primed.markers_volcano$Significant <- ifelse(celltypeCMP_Primed.markers_volcano$p_val_adj < 0.05&celltypeCMP_Primed.markers_volcano$avg_log2FC > 0.37 | celltypeCMP_Primed.markers_volcano$p_val_adj < 0.05 & celltypeCMP_Primed.markers_volcano$avg_log2FC < -0.37,
-                                                   ifelse(celltypeCMP_Primed.markers_volcano$avg_log2FC > 0,
-                                                          "Upregulated bimod < 0.05",
-                                                          "Downregulated bimod < 0.05"),
-                                                   "Not Significative"
-                                                   )
-
-celltypeCMP_Primed.markers_volcano$Significant2 <- ifelse(celltypeCMP_Primed.markers_volcano$p_val_adj < 0.05&celltypeCMP_Primed.markers_volcano$avg_log2FC > 1 | celltypeCMP_Primed.markers_volcano$p_val_adj < 0.05 & celltypeCMP_Primed.markers_volcano$avg_log2FC < -1,
                                                    ifelse(celltypeCMP_Primed.markers_volcano$avg_log2FC > 0,
                                                           "Upregulated bimod < 0.05",
                                                           "Downregulated bimod < 0.05"),
@@ -816,10 +867,6 @@ celltypeCMP_Primed.markers_volcano$genename <- rownames(celltypeCMP_Primed.marke
 length(rownames(celltypeCMP_Primed.markers_volcano[celltypeCMP_Primed.markers_volcano$Significant == "Upregulated bimod < 0.05",]))
 # number of genes downregulated (< -1.3 FC)
 length(rownames(celltypeCMP_Primed.markers_volcano[celltypeCMP_Primed.markers_volcano$Significant == "Downregulated bimod < 0.05",]))
-# number of genes upregulated (> 2 FC)
-length(rownames(celltypeCMP_Primed.markers_volcano[celltypeCMP_Primed.markers_volcano$Significant2 == "Upregulated bimod < 0.05",]))
-# number of genes downregulated (< -2 FC)
-length(rownames(celltypeCMP_Primed.markers_volcano[celltypeCMP_Primed.markers_volcano$Significant2 == "Downregulated bimod < 0.05",]))
 
 ggplot(celltypeCMP_Primed.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj))) +
   geom_point(aes(color = Significant))+
@@ -836,12 +883,8 @@ ggplot(celltypeCMP_Primed.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_
     size = 3.4,
     box.padding = unit(0.25, "lines"),
     point.padding = unit(0.25, "lines"))
-```
 
-## Panel D
-* GMP
-```{r}
-# GMPs
+### GMP
 celltypeGMP.markers_volcano$Significant <- ifelse(celltypeGMP.markers_volcano$p_val_adj < 0.05&celltypeGMP.markers_volcano$avg_log2FC > 0.37 | celltypeGMP.markers_volcano$p_val_adj < 0.05 & celltypeGMP.markers_volcano$avg_log2FC < -0.37,
                                                    ifelse(celltypeGMP.markers_volcano$avg_log2FC > 0,
                                                           "Upregulated bimod < 0.05",
@@ -849,12 +892,6 @@ celltypeGMP.markers_volcano$Significant <- ifelse(celltypeGMP.markers_volcano$p_
                                                    "Not Significative"
                                                    )
 
-celltypeGMP.markers_volcano$Significant2 <- ifelse(celltypeGMP.markers_volcano$p_val_adj < 0.05&celltypeGMP.markers_volcano$avg_log2FC > 1 | celltypeGMP.markers_volcano$p_val_adj < 0.05 & celltypeGMP.markers_volcano$avg_log2FC < -1,
-                                                   ifelse(celltypeGMP.markers_volcano$avg_log2FC > 0,
-                                                          "Upregulated bimod < 0.05",
-                                                          "Downregulated bimod < 0.05"),
-                                                   "Not Significative"
-                                                   )
 
 celltypeGMP.markers_volcano$genename <- rownames(celltypeGMP.markers_volcano)
 
@@ -862,10 +899,6 @@ celltypeGMP.markers_volcano$genename <- rownames(celltypeGMP.markers_volcano)
 length(rownames(celltypeGMP.markers_volcano[celltypeGMP.markers_volcano$Significant == "Upregulated bimod < 0.05",]))
 # number of genes downregulated (< -1.3 FC)
 length(rownames(celltypeGMP.markers_volcano[celltypeGMP.markers_volcano$Significant == "Downregulated bimod < 0.05",]))
-# number of genes upregulated (> 2 FC)
-length(rownames(celltypeGMP.markers_volcano[celltypeGMP.markers_volcano$Significant2 == "Upregulated bimod < 0.05",]))
-# number of genes downregulated (< -2 FC)
-length(rownames(celltypeGMP.markers_volcano[celltypeGMP.markers_volcano$Significant2 == "Downregulated bimod < 0.05",]))
 
 ggplot(celltypeGMP.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj))) +
   geom_point(aes(color = Significant))+
@@ -883,12 +916,8 @@ ggplot(celltypeGMP.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj))) 
     size = 3.4,
     box.padding = unit(0.25, "lines"),
     point.padding = unit(0.25, "lines"))
-```
 
-## Panel E
-* MEP
-```{r}
-# MEPs
+### MEP
 celltypeMEP.markers_volcano$Significant <- ifelse(celltypeMEP.markers_volcano$p_val_adj < 0.05&celltypeMEP.markers_volcano$avg_log2FC > 0.37 | celltypeMEP.markers_volcano$p_val_adj < 0.05 & celltypeMEP.markers_volcano$avg_log2FC < -0.37,
                                                    ifelse(celltypeMEP.markers_volcano$avg_log2FC > 0,
                                                           "Upregulated bimod < 0.05",
@@ -896,12 +925,6 @@ celltypeMEP.markers_volcano$Significant <- ifelse(celltypeMEP.markers_volcano$p_
                                                    "Not Significative"
                                                    )
 
-celltypeMEP.markers_volcano$Significant2 <- ifelse(celltypeMEP.markers_volcano$p_val_adj < 0.05&celltypeMEP.markers_volcano$avg_log2FC > 1 | celltypeMEP.markers_volcano$p_val_adj < 0.05 & celltypeMEP.markers_volcano$avg_log2FC < -1,
-                                                   ifelse(celltypeMEP.markers_volcano$avg_log2FC > 0,
-                                                          "Upregulated bimod < 0.05",
-                                                          "Downregulated bimod < 0.05"),
-                                                   "Not Significative"
-                                                   )
 
 celltypeMEP.markers_volcano$genename <- rownames(celltypeMEP.markers_volcano)
 
@@ -909,10 +932,6 @@ celltypeMEP.markers_volcano$genename <- rownames(celltypeMEP.markers_volcano)
 length(rownames(celltypeMEP.markers_volcano[celltypeMEP.markers_volcano$Significant == "Upregulated bimod < 0.05",]))
 # number of genes downregulated (< -1.3 FC)
 length(rownames(celltypeMEP.markers_volcano[celltypeMEP.markers_volcano$Significant == "Downregulated bimod < 0.05",]))
-# number of genes upregulated (> 2 FC)
-length(rownames(celltypeMEP.markers_volcano[celltypeMEP.markers_volcano$Significant2 == "Upregulated bimod < 0.05",]))
-# number of genes downregulated (< -2 FC)
-length(rownames(celltypeMEP.markers_volcano[celltypeMEP.markers_volcano$Significant2 == "Downregulated bimod < 0.05",]))
 
 ggplot(celltypeMEP.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj))) +
   geom_point(aes(color = Significant))+
@@ -929,12 +948,8 @@ ggplot(celltypeMEP.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj))) 
     size = 3.4,
     box.padding = unit(0.25, "lines"),
     point.padding = unit(0.25, "lines"))
-```
 
-## Panel F
-* MkP Mk
-```{r}
-# MkP_Mks
+### MKP_MK
 celltypeMkP_Mk.markers_volcano$Significant <- ifelse(celltypeMkP_Mk.markers_volcano$p_val_adj < 0.05&celltypeMkP_Mk.markers_volcano$avg_log2FC > 0.37 | celltypeMkP_Mk.markers_volcano$p_val_adj < 0.05 & celltypeMkP_Mk.markers_volcano$avg_log2FC < -0.37,
                                                    ifelse(celltypeMkP_Mk.markers_volcano$avg_log2FC > 0,
                                                           "Upregulated bimod < 0.05",
@@ -942,12 +957,6 @@ celltypeMkP_Mk.markers_volcano$Significant <- ifelse(celltypeMkP_Mk.markers_volc
                                                    "Not Significative"
                                                    )
 
-celltypeMkP_Mk.markers_volcano$Significant2 <- ifelse(celltypeMkP_Mk.markers_volcano$p_val_adj < 0.05&celltypeMkP_Mk.markers_volcano$avg_log2FC > 1 | celltypeMkP_Mk.markers_volcano$p_val_adj < 0.05 & celltypeMkP_Mk.markers_volcano$avg_log2FC < -1,
-                                                   ifelse(celltypeMkP_Mk.markers_volcano$avg_log2FC > 0,
-                                                          "Upregulated bimod < 0.05",
-                                                          "Downregulated bimod < 0.05"),
-                                                   "Not Significative"
-                                                   )
 
 celltypeMkP_Mk.markers_volcano$genename <- rownames(celltypeMkP_Mk.markers_volcano)
 
@@ -955,10 +964,6 @@ celltypeMkP_Mk.markers_volcano$genename <- rownames(celltypeMkP_Mk.markers_volca
 length(rownames(celltypeMkP_Mk.markers_volcano[celltypeMkP_Mk.markers_volcano$Significant == "Upregulated bimod < 0.05",]))
 # number of genes downregulated (< -1.3 FC)
 length(rownames(celltypeMkP_Mk.markers_volcano[celltypeMkP_Mk.markers_volcano$Significant == "Downregulated bimod < 0.05",]))
-# number of genes upregulated (> 2 FC)
-length(rownames(celltypeMkP_Mk.markers_volcano[celltypeMkP_Mk.markers_volcano$Significant2 == "Upregulated bimod < 0.05",]))
-# number of genes downregulated (< -2 FC)
-length(rownames(celltypeMkP_Mk.markers_volcano[celltypeMkP_Mk.markers_volcano$Significant2 == "Downregulated bimod < 0.05",]))
 
 ggplot(celltypeMkP_Mk.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj))) +
   geom_point(aes(color = Significant))+
@@ -977,380 +982,16 @@ ggplot(celltypeMkP_Mk.markers_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj)
     point.padding = unit(0.25, "lines"))
 ```
 
-```{r}
-# extract both lists (Up/Down) for each celltype comparison
-# for (i in list_tmp[1:length(list_tmp)]){
-#   if(i != "Plt"){
-#     assign(paste("celltype", i,".markers_volcano_1_3", sep = ""),rownames(get(paste("celltype", i,"markers_volcano")$Significant)))
-#       print(paste("celltype", i,".markers_volcano_1_3", sep = ""))
-#       print(head(get(paste("celltype", i,".markers_volcano_1_3", sep = "")),n=50))
-#       write.table(get(paste("celltype", i,".markers_volcano_1_3", sep = "")),
-#                   paste(OUTPUT_PATH,"celltype", i,".markers_volcano_1_3.txt", sep = "_"),
-#                   quote=FALSE,row.names = TRUE, sep = "/n")
-#       }
-# }
-```
+## Panel B
 
+* EnrichR
 
-# Figure 6 bis {.tabset}
+## Panel C
 
-* Some of following plots are scripted here but plotted in "supplemental_figures.Rmd"
+* EnrichR
 
-## Down {.tabset}
-### Barplots {.tabset}
-#### GO
-![Down_Barplot_GO](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/DOWN_barplot_GO_Biological_Process_2018.png)
-
-#### KEGG
-![Down_Barplot_KEGG](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/DOWN_barplot_KEGG_2019_Human.png)
-
-#### REACTOME
-![Down_Barplot_REACT](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/DOWN_barplot_Reactome_2016.png)
-
-#### TRANSCRIPTION_FACTOR
-![Down_Barplot_TF](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/DOWN_barplot_Transcription_Factor_PPIs.png)
-
-#### TRANSFAC_JASPAR
-![Down_Barplot_JASP](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/DOWN_barplot_TRANSFAC_and_JASPAR_PWMs.png)
-
-
-
-### Bubbleplots {.tabset}
-#### GO
-![Down_Bubbleplot_GO](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/DOWN_bubbleplot_GO_Biological_Process_2018.png)
-
-#### KEGG
-![Down_Bubbleplot_KEGG](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/DOWN_bubbleplot_KEGG_2019_Human.png)
-
-#### REACTOME
-![Down_Bubbleplot_REACT](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/DOWN_bubbleplot_Reactome_2016.png)
-
-#### TRANSCRIPTION_FACTOR
-![Down_Bubbleplot_TF](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/DOWN_bubbleplot_Transcription_Factor_PPIs.png)
-
-#### TRANSFAC_JASPAR
-![Down_Bubbleplot_JASP](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/DOWN_bubbleplot_TRANSFAC_and_JASPAR_PWMs.png)
-
-
-
-
-## Up {.tabset}
-### Barplots {.tabset}
-#### GO
-![Up_Barplot_GO](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/UP_barplot_GO_Biological_Process_2018.png)
-
-#### KEGG
-![Up_Barplot_KEGG](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/UP_barplot_KEGG_2019_Human.png)
-
-#### REACTOME
-![Up_Barplot_REACT](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/UP_barplot_Reactome_2016.png)
-
-#### TRANSCRIPTION_FACTOR
-![Up_Barplot_TF](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/UP_barplot_Transcription_Factor_PPIs.png)
-
-#### TRANSFAC_JASPAR
-![Up_Barplot_JASP](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/UP_barplot_TRANSFAC_and_JASPAR_PWMs.png)
-
-
-### Bubbleplots {.tabset}
-#### GO
-![Up_Bubbleplot_GO](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/UP_bubbleplot_GO_Biological_Process_2018.png)
-
-#### KEGG
-![Up_Bubbleplot_KEGG](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/UP_bubbleplot_KEGG_2019_Human.png)
-
-#### REACTOME
-![Up_Bubbleplot_REACT](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/UP_bubbleplot_Reactome_2016.png)
-
-#### TRANSCRIPTION_FACTOR
-![Up_Bubbleplot_TF](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/UP_bubbleplot_Transcription_Factor_PPIs.png)
-
-#### TRANSFAC_JASPAR
-![Up_Bubbleplot_JASP](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/enrichR/INPUT_DEGs/enrichR/plots/UP_bubbleplot_TRANSFAC_and_JASPAR_PWMs.png)
-
-# Figure 6 ter {.tabset}
-
-* Colored by celltypes
-
-* Some of following plots are scripted here but plotted in "supplemental_figures.Rmd"
-
-## Controls {.tabset}
-### nCounts
-```{r}
-myColors <- c("#7CAE00","#04BF68","#F26D6D","#CD9600","#05AFF2","#05AFF2","#05AFF2","#05AFF2","#05AFF2","#CC88FF","#CC88FF","#CC88FF","#CC88FF","#CC88FF","#F25ECB")
-Idents(ctrl.object) <- "RNA_snn_res.1.2"
-ctrl.object@meta.data$RNA_snn_res.1.2 <- factor(ctrl.object@meta.data$RNA_snn_res.1.2,
-                                   levels = c("13","10","7","11","9","5","4","0","2","1","3","6","8","12","14")
-                                   )
-# nFeature_RNA
-# nCount_RNA
-
-VlnPlot(ctrl.object, features = "nCount_RNA", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-### nFeatures
-```{r}
-myColors <- c("#7CAE00","#04BF68","#F26D6D","#CD9600","#05AFF2","#05AFF2","#05AFF2","#05AFF2","#05AFF2","#CC88FF","#CC88FF","#CC88FF","#CC88FF","#CC88FF","#F25ECB")
-Idents(ctrl.object) <- "RNA_snn_res.1.2"
-ctrl.object@meta.data$RNA_snn_res.1.2 <- factor(ctrl.object@meta.data$RNA_snn_res.1.2,
-                                   levels = c("13","10","7","11","9","5","4","0","2","1","3","6","8","12","14")
-                                   )
-# nFeature_RNA
-# nCount_RNA
-
-VlnPlot(ctrl.object, features = "nFeature_RNA", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-### Genes {.tabset}
-#### ITGA2B
-```{r}
-VlnPlot(ctrl.object, features = "ITGA2B", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### ITGB3
-```{r}
-VlnPlot(ctrl.object, features = "ITGB3", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### PF4
-```{r}
-VlnPlot(ctrl.object, features = "PF4", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### GP9
-```{r}
-VlnPlot(ctrl.object, features = "GP9", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### GP6
-```{r}
-VlnPlot(ctrl.object, features = "GP6", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### P2RY1
-```{r}
-VlnPlot(ctrl.object, features = "P2RY1", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### MYH9
-```{r}
-VlnPlot(ctrl.object, features = "MYH9", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### GATA1
-```{r}
-VlnPlot(ctrl.object, features = "GATA1", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### GATA2
-```{r}
-VlnPlot(ctrl.object, features = "GATA2", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### FLI1
-```{r}
-VlnPlot(ctrl.object, features = "FLI1", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### TAL1
-```{r}
-VlnPlot(ctrl.object, features = "TAL1", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### ETV6   
-```{r}
-VlnPlot(ctrl.object, features = "ETV6", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### RUNX1   
-```{r}
-VlnPlot(ctrl.object, features = "RUNX1", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### CD34   
-```{r}
-VlnPlot(ctrl.object, features = "CD34", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### HLA-DRA   
-```{r}
-VlnPlot(ctrl.object, features = "HLA-DRA", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### DNM1L   
-```{r}
-VlnPlot(ctrl.object, features = "DNM1L", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### CD38   
-```{r}
-VlnPlot(ctrl.object, features = "CD38", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### DNM1L   
-```{r}
-VlnPlot(ctrl.object, features = "DNM1L", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### CYCS   
-```{r}
-VlnPlot(ctrl.object, features = "CYCS", pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### PTPRCetc   
-```{r}
-VlnPlot(ctrl.object, features = c("PTPRC","ITGB2","IL18","PIM1","MYCT1","MYCBP2"), pt.size = 0.05, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-#### RPS   
-```{r}
-VlnPlot(ctrl.object, features = c("RPS26","RPS27","RPS27L","RPL3","RPSA","RPL4","RPL6","RPS3","RPS6"), pt.size = 0, group.by = "RNA_snn_res.1.2", log = F,cols = myColors)
-```
-
-## Patients {.tabset}
-### nCounts
-```{r}
-myColors <- c("#7CAE00","#04BF68","#04BF68","#CD9600","#F26D6D","#05AFF2","#05AFF2","#05AFF2","#05AFF2","#05AFF2","#CC88FF")
-Idents(pat.object) <- "RNA_snn_res.0.8"
-pat.object@meta.data$RNA_snn_res.0.8 <- factor(pat.object@meta.data$RNA_snn_res.0.8,
-                                  levels = c("9","3","7","10","4","5","2","6","8","0","1")
-                                  )
-# nFeature_RNA
-# nCount_RNA
-
-VlnPlot(pat.object, features = "nCount_RNA", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-### nFeatures
-```{r}
-myColors <- c("#7CAE00","#04BF68","#04BF68","#CD9600","#F26D6D","#05AFF2","#05AFF2","#05AFF2","#05AFF2","#05AFF2","#CC88FF")
-Idents(pat.object) <- "RNA_snn_res.0.8"
-pat.object@meta.data$RNA_snn_res.0.8 <- factor(pat.object@meta.data$RNA_snn_res.0.8,
-                                  levels = c("9","3","7","10","4","5","2","6","8","0","1")
-                                  )
-
-VlnPlot(pat.object, features = "nFeature_RNA", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-### Genes {.tabset}
-#### ITGA2B
-```{r}
-VlnPlot(pat.object, features = "ITGA2B", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### ITGB3
-```{r}
-VlnPlot(pat.object, features = "ITGB3", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### PF4
-```{r}
-VlnPlot(pat.object, features = "PF4", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### GP9
-```{r}
-VlnPlot(pat.object, features = "GP9", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### GP6
-```{r}
-VlnPlot(pat.object, features = "GP6", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### P2RY1
-```{r}
-VlnPlot(pat.object, features = "P2RY1", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### MYH9
-```{r}
-VlnPlot(pat.object, features = "MYH9", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### MYH9
-```{r}
-VlnPlot(pat.object, features = "GATA1", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### GATA1
-```{r}
-VlnPlot(pat.object, features = "GATA1", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### GATA2
-```{r}
-VlnPlot(pat.object, features = "GATA2", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### FLI1
-```{r}
-VlnPlot(pat.object, features = "FLI1", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### TAL1
-```{r}
-VlnPlot(pat.object, features = "TAL1", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### ETV6
-```{r}
-VlnPlot(pat.object, features = "ETV6", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### RUNX1
-```{r}
-VlnPlot(pat.object, features = "RUNX1", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### CD34
-```{r}
-VlnPlot(pat.object, features = "CD34", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### HLA-DRA
-```{r}
-VlnPlot(pat.object, features = "HLA-DRA", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### HLA-DRA
-```{r}
-VlnPlot(pat.object, features = "HLA-DRA", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### DNM1L
-```{r}
-VlnPlot(pat.object, features = "DNM1L", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### CD38
-```{r}
-VlnPlot(pat.object, features = "CD38", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### DNM1L
-```{r}
-VlnPlot(pat.object, features = "DNM1L", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### CYCS   
-```{r}
-VlnPlot(pat.object, features = "CYCS", pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### PTPRCetc   
-```{r}
-VlnPlot(pat.object, features = c("PTPRC","ITGB2","IL18","PIM1","MYCT1","MYCBP2"), pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-#### RP   
-```{r}
-VlnPlot(pat.object, features = c("RPS26","RPS27","RPS27L","RPL3","RPSA","RPL4","RPL6","RPS3","RPS6"), pt.size = 0.05, group.by = "RNA_snn_res.0.8", log = F,cols = myColors)
-```
-
-# Figure 8
-## Dotplot genes p53 related
-```{r,fig.width=16,fig.height=8}
+## Panel D
+```{r,fig.height=10,fig.width=10}
 # DotPlot of supervised signatures for clusters identification
 Idents(ETV6_2020) <- "celltypes_ETV6status"
 
@@ -1359,7 +1000,7 @@ ETV6_2020@meta.data$celltypes_ETV6status <- factor(ETV6_2020@meta.data$celltypes
                                            )
 
 dp <- DotPlot(ETV6_2020,
-              # idents = c("Controls_MEP", "Patients_MEP","Controls_MkP_Mk", "Patients_MkP_Mk"),
+              idents = c("Controls_MEP", "Patients_MEP","Controls_MkP_Mk", "Patients_MkP_Mk"),
               features = c("TTK","NUDT1","DUT","UBE2V2","UBE2T","RBX1","USP1","UCHL5","MGMT","FEN1","RAD23A","RAD23B","XRCC6","PRKDC","SFPQ","SF3B5","PTTG1","RPA3","SWI5","SMARCB1","SMC1A","RNASEH2C","RNASEH2B","SEM1","TAF9","PARP1","POLD2","POLR2I","RUVBL2","RUVBL1","HMGN1","HMGB1","MORF4L2","CENPX","SSRP1","PARK7","NUCKS1","ACTL6A","ACTB")
               ) + 
   geom_point(aes(size=pct.exp),
@@ -1373,6 +1014,8 @@ dp <- DotPlot(ETV6_2020,
                          ) + 
   guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))
          ) + 
-  RotatedAxis()
+  RotatedAxis(
+  ) +
+  coord_flip()
 dp
 ```
