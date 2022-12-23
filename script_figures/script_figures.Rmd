@@ -146,29 +146,30 @@ dp <- DotPlot(ctrl.object,
 dp
 ```
 
-## Panel F {.tabset}
+## Panel F
 ```{r,fig.width=10,fig.height=10}
-# FeaturePlots
-gene_list <- c("CRHBP","PROM1","PRG2","MPO","CD34","CD38","KIT","HBB","ITGA2B","PLEK","CAVIN2","LAT","LMNA","SELP","PF4")
+# ggplot UMAP with genes expressed counts
+UMAP <- data.frame(UMAP_1 = ctrl.object@reductions$umap@cell.embeddings[,1],
+                   UMAP_2 = ctrl.object@reductions$umap@cell.embeddings[,2],
+                   gene = ctrl.object@meta.data$nFeature_RNA)
 
-for (i in 1:length(gene_list)){
-    tryCatch({
-      print(paste("###", gene_list[i], sep = " "))
-      print(FeaturePlot(object = ctrl.object,
-                        features = gene_list[i],
-                        reduction = "umap",
-                        cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"),
-                        pt.size = 0.7)+
-              NoAxes()+
-              NoLegend()
-            )
-    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
-}
+Mutation = ctrl.object@meta.data$ETV6status
+Max=max(ctrl.object@meta.data$nFeature_RNA)
+Min=min(ctrl.object@meta.data$nFeature_RNA)
+
+ggplot(UMAP,aes(x=UMAP_1,y=UMAP_2)
+       )+
+  geom_point(aes(color=gene, shape = Mutation)
+             ) + 
+  scale_colour_gradient2(low = "blue",
+                         mid="orange",
+                         high="red",
+                         name="n° of genes expressed",
+                         midpoint=(Max+Min)/2
+                         )
 ```
 
-
-# Figure 2 {.tabset}
-## Panel A
+## Panel G
 ```{r,fig.width=10,fig.height=10}
 # ggplot UMAP with mRNA counts
 UMAP <- data.frame(UMAP_1 = ctrl.object@reductions$umap@cell.embeddings[,1],
@@ -193,30 +194,46 @@ ggplot(UMAP,aes(x=UMAP_1,y=UMAP_2)
                          )
 ```
 
-## Panel B
+## Panel H
 ```{r,fig.width=10,fig.height=10}
-# ggplot UMAP with genes expressed counts
-UMAP <- data.frame(UMAP_1 = ctrl.object@reductions$umap@cell.embeddings[,1],
-                   UMAP_2 = ctrl.object@reductions$umap@cell.embeddings[,2],
-                   gene = ctrl.object@meta.data$nFeature_RNA)
+# Cell assignation based on signatures & both DotPlots
+Idents(ctrl.object) <- "RNA_snn_res.1.2"
+ctrl.object@meta.data$celltypes <- "NA"
 
-Mutation = ctrl.object@meta.data$ETV6status
-Max=max(ctrl.object@meta.data$nFeature_RNA)
-Min=min(ctrl.object@meta.data$nFeature_RNA)
+for (i in 1:length(rownames(ctrl.object@meta.data))){
+    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% c(1,6,3,8,12)){
+      ctrl.object@meta.data$celltypes[i] <- "MkP_Mk"
+      }
+    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% 14){
+      ctrl.object@meta.data$celltypes[i] <- "Plt"
+      }
+    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% c(2,0,4,5,9)){
+      ctrl.object@meta.data$celltypes[i] <- "MEP"
+      }
+    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% 7){
+      ctrl.object@meta.data$celltypes[i] <- "CMP"
+      }
+    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% 11){
+      ctrl.object@meta.data$celltypes[i] <- "CMP_Primed"
+      }
+    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% 13){
+      ctrl.object@meta.data$celltypes[i] <- "GMP"
+      }
+    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% 10){
+      ctrl.object@meta.data$celltypes[i] <- "HSPC"
+      }
+}
 
-ggplot(UMAP,aes(x=UMAP_1,y=UMAP_2)
-       )+
-  geom_point(aes(color=gene, shape = Mutation)
-             ) + 
-  scale_colour_gradient2(low = "blue",
-                         mid="orange",
-                         high="red",
-                         name="n° of genes expressed",
-                         midpoint=(Max+Min)/2
-                         )
+# Plotting by celltypes
+DimPlot(object = ctrl.object,
+        pt.size = 0.7,
+        reduction = "umap",
+        group.by = "celltypes",
+        order = T
+        )
 ```
 
-## Panel C
+## Panel I {.tabset}
 ```{r,fig.width=10,fig.height=10}
 # FeaturePlot on signatures estimated from literature and implemented with genes from top 20 genes of each clusters
 # Defining signatures & adding them to the object by incorporating it in the meta.data
@@ -271,53 +288,81 @@ for (i in 1:length(sig_list)){
 }
 ```
 
-## Panel D
+# Figure 2 {.tabset}
+## Panel A
 ```{r,fig.width=10,fig.height=10}
-# Cell assignation based on signatures & both DotPlots
-Idents(ctrl.object) <- "RNA_snn_res.1.2"
-ctrl.object@meta.data$celltypes <- "NA"
+ctrl.object@meta.data$celltypes <- factor(ctrl.object@meta.data$celltypes, levels = c("HSPC","GMP","CMP","CMP_Primed","MEP","MkP_Mk","Plt"))
 
-for (i in 1:length(rownames(ctrl.object@meta.data))){
-    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% c(1,6,3,8,12)){
-      ctrl.object@meta.data$celltypes[i] <- "MkP_Mk"
-      }
-    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% 14){
-      ctrl.object@meta.data$celltypes[i] <- "Plt"
-      }
-    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% c(2,0,4,5,9)){
-      ctrl.object@meta.data$celltypes[i] <- "MEP"
-      }
-    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% 7){
-      ctrl.object@meta.data$celltypes[i] <- "CMP"
-      }
-    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% 11){
-      ctrl.object@meta.data$celltypes[i] <- "CMP_Primed"
-      }
-    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% 13){
-      ctrl.object@meta.data$celltypes[i] <- "GMP"
-      }
-    if (ctrl.object@meta.data$RNA_snn_res.1.2[i] %in% 10){
-      ctrl.object@meta.data$celltypes[i] <- "HSPC"
-      }
-}
+# FindAllMarkers
+if(file.exists(paste0(OUTPUT_PATH, "ctrl.object_FAM_regulons.csv"))){
+  ctrl.regulons <- read.csv(file = paste0(OUTPUT_PATH, "ctrl.object_FAM_regulons.csv"))
+  }else{
+  Idents(ctrl.object) <- "celltypes"
+  ctrl.regulons <- FindAllMarkers(ctrl.object,
+                                  only.pos = F,
+                                  min.pct = 0.1,
+                                  logfc.threshold = 0,
+                                  verbose = T,
+                                  assay = "AUC",
+                                  test.use = "wilcox"
+                                  )
+  write.csv(ctrl.regulons,
+                   file = paste0(OUTPUT_PATH,
+                                "ctrl.object_FAM_regulons.csv"
+                                )
+            )
+  }
 
-# Plotting by celltypes
-DimPlot(object = ctrl.object,
-        pt.size = 0.7,
-        reduction = "umap",
-        group.by = "celltypes",
-        order = T
-        )
+all.regulons <- rownames(ctrl.object@assays$AUC)
+ctrl.object <- ScaleData(ctrl.object, assay = "AUC", features = all.regulons, do.scale = T, do.center = T)
+ctrl.top5 <- ctrl.regulons %>% group_by(cluster) %>% top_n(5, avg_log2FC)
+
+## Heatmap top 20 regulons FAM in controls 
+DoHeatmap(ctrl.object, features = ctrl.top5$gene, group.by = "celltypes", assay = "AUC", slot = "scale.data", label = T, raster = T) + scale_fill_gradientn(colors = c("blue","white","red"))
 ```
 
-## Panel E
+## Panel B
 ```{r,fig.width=10,fig.height=10}
-sig_list <- c("TCF7L2(+)","TCF4(+)","HOXA9(+)","CEBPD(+)","ZNF502(+)","CEBPE(+)","GATA2(+)","CEBPD(+)","FOXJ1(+)","ZMAT4(+)","AHR(+)","BATF(+)","KLF1(+)","MECOM(+)","SPI1(+)","GATA1(+)","MAFG(+)","NFE2(+)")
+# FeaturePlot on regulonic signatures from Figure 2A and implemented with regulons from top 5 genes of each cell type
+# Defining signatures & adding them to the object by incorporating it in the meta.data
+ctrl.object <- AddModuleScore(ctrl.object,
+                              features = list(c("TCF4(+)","HLF(+)","HOXA3(+)","TCF7L2(+)","HOXA9(+)")),
+                              name = "auc_HSPC", 
+                              assay = "AUC"
+                              )
+ctrl.object <- AddModuleScore(ctrl.object,
+                              features = list(c("IKZF2(+)","CEBPB(+)","FOXJ1(+)","GATA2(+)","KLF6(+)")),
+                              name = "auc_CMP",
+                              assay = "AUC"
+                              )
+ctrl.object <- AddModuleScore(ctrl.object,
+                              features = list(c("GATA2"(+),"KLF6(+)","ZMAT4(+)","BATF(+)")),
+                              name = "auc_Mk_primed_CMP",
+                              assay = "AUC"
+                              )
+ctrl.object <- AddModuleScore(ctrl.object,
+                              features = list(c("ZNF502(+)","ETV6(+)","CEBPD(+)","CEBPE(+)","CEBPA(+)")),
+                              name = "auc_GMP",
+                              assay = "AUC"
+                              )
+ctrl.object <- AddModuleScore(ctrl.object,
+                              features = list(c("KLF1(+)","SPI1(+)","MECOM(+)","ENO1(+)","ATF5(+)")),
+                              name = "auc_MEP",
+                              assay = "AUC"
+                              )
+ctrl.object <- AddModuleScore(ctrl.object,
+                              features = list(c("GATA1(+)","MAFG(+)","NFE2(+)","FLI1(+)","ELF1(+)")),
+                              name = "auc_MkP_Mk",
+                              assay = "AUC"
+                              )
+
+# FeaturePlots {.tabset}
+sig_list <- c("auc_HSPC1","auc_CMP1","auc_non_primed_CMP1","auc_Mk_primed_CMP1","auc_GMP1","auc_MEP1","auc_MEP_ERP1","auc_MkP_Mk1")
 
 for (i in 1:length(sig_list)){
     tryCatch({
       print(paste("###", sig_list[i], sep = " "))
-      print(FeaturePlot(object = pat.object,
+      print(FeaturePlot(object = ctrl.object,
                         features = sig_list[i],
                         reduction = "umap",
                         cols = c("grey","lightblue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"),
@@ -327,21 +372,6 @@ for (i in 1:length(sig_list)){
             )
     }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
 }
-```
-
-# Figure 3 {.tabset}
-## Panel A
-```{r,fig.width=10,fig.height=10}
-# Plotting pat.object UMAP with "orig.ident"
-pat.object@meta.data$orig.ident <- factor(pat.object@meta.data$orig.ident,
-                                           levels = c("D6", "D11")
-                                           )
-DimPlot(object = pat.object,
-        pt.size = 0.7,
-        reduction = "umap",
-        group.by = "orig.ident",
-        order = T
-        )
 ```
 
 ## Panel B
@@ -357,7 +387,32 @@ ggplotly(DimPlot(object = pat.object,
         ))
 ```
 
+# Figure 3 {.tabset}
 ## Panel C
+```{r,fig.width=10,fig.height=10}
+# Plotting pat.object UMAP with "orig.ident"
+pat.object@meta.data$orig.ident <- factor(pat.object@meta.data$orig.ident,
+                                           levels = c("D6", "D11")
+                                           )
+DimPlot(object = pat.object,
+        pt.size = 0.7,
+        reduction = "umap",
+        group.by = "orig.ident",
+        order = T
+        )
+        
+# Plotting pat.object UMAP with "RNA_snn_res.0.8"
+ggplotly(DimPlot(object = pat.object,
+        pt.size = 0.7,
+        reduction = "umap",
+        group.by = "RNA_snn_res.0.8",
+        order = T,
+        label = T,
+        label.size = 6
+        ))
+```
+
+## Panel D
 ```{r,fig.width=16,fig.height=8}
 # DotPlot of same supervised signatures for clusters identification
 Idents(pat.object) <- "RNA_snn_res.0.8"
@@ -382,7 +437,7 @@ dp <- DotPlot(pat.object,
 dp
 ```
 
-## Panel D
+## Panel E
 ```{r,fig.width=16,fig.height=8}
 # Unsupervised DotPlot with top 5 genes
 # FindAllMarkers
@@ -433,7 +488,7 @@ dp <- DotPlot(pat.object,
 dp
 ```
 
-## Panel E {.tabset}
+## Panel F {.tabset}
 ```{r,fig.width=10,fig.height=10}
 # FeaturePlot on signatures estimated from literature and implemented with genes from top 20 genes of each clusters
 # Defining signatures & adding them to the object by incorporating it in the meta.data
@@ -488,7 +543,7 @@ for (i in 1:length(sig_list)){
 }
 ```
 
-## Panel F
+## Panel G
 ```{r,fig.width=10,fig.height=10}
 # Cell assignation based on signatures & both DotPlots
 Idents(pat.object) <- "RNA_snn_res.0.8"
@@ -529,14 +584,46 @@ DimPlot(object = pat.object,
 ```
 
 # Figure 4 {.tabset}
-## Panel  A
-![traj_tem](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/trajectoires_et_plots/TRajectoire_Control_Lineage1.png)
-
-## Panel  B
-![traj_pat](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/trajectoires_et_plots/Trajectoire_Pat_Lineage1.png)
-
-## Panel C
+## Panel A
 * See "trajectory.Rmd"
+
+## Panel B
+```{r,fig.height=10,fig.width=10}
+myColors <- c("#53B400","#F8766D","#C49A00","#00C094","#00B6EB","#00B6EB","#00B6EB","#00B6EB","#00B6EB","#A58AFF","#A58AFF","#A58AFF","#A58AFF","#A58AFF","#FB61D7")
+myColors2 <- c("#53B400","#F8766D","#C49A00","#00C094","#00C094","#00B6EB","#00B6EB","#00B6EB","#00B6EB","#00B6EB","#A58AFF")
+
+gene <- c("CD34","CD38","HLA-DRA","GP9","PF4","ITGA2B","FLI1","GATA1","GATA2")
+
+for (i in gene) {
+  Idents(ctrl.object) <- "RNA_snn_res.1.2"
+  ctrl.object@meta.data$RNA_snn_res.1.2 <- factor(ctrl.object@meta.data$RNA_snn_res.1.2,
+                                                  levels = c("13","7","11","10","9","5","4","0","2","1","3","6","8","12","14")
+                                                  )
+  p1 <- VlnPlot(ctrl.object,
+                features = i,
+                pt.size = 0,
+                group.by = "RNA_snn_res.1.2",
+                log = F,
+                cols = myColors,
+                assay = "RNA"
+                ) + NoLegend() + geom_boxplot()
+########################################
+  Idents(pat.object) <- "RNA_snn_res.0.8"
+  pat.object@meta.data$RNA_snn_res.0.8 <- factor(pat.object@meta.data$RNA_snn_res.0.8,
+                                                 levels = c("9","4","10","3","7","5","2","6","8","0","1")
+                                                 )
+  p2 <- VlnPlot(pat.object,
+                features = i,
+                pt.size = 0,
+                group.by = "RNA_snn_res.0.8",
+                log = F,
+                cols = myColors2,
+                assay = "RNA"
+                ) + NoLegend() + geom_boxplot()
+  vln <- p1+p2
+  print(vln)
+}
+```
 
 # Figure 5 {.tabset}
 ## Panel A
@@ -580,171 +667,10 @@ rm(ETV6_celltypes)
 rm(tmp)
 ```
 
-## Panel B {.tabset}
-### Dimplot Days 
-```{r}
-ETV6_2020@meta.data$orig.ident <- factor(ETV6_2020@meta.data$orig.ident,
-                                           levels = c("D6", "D11")
-                                           )
+## Panel C
+```{r,fig.height=10,fig.width=10}
 
-DimPlot(object = ETV6_2020,
-        pt.size = 0.7,
-        reduction = "umap",
-        group.by = "orig.ident",
-        order = T
-        )
 ```
-
-### Encart HSPCs
-```{r}
-df <- data.frame(ETV6_2020@meta.data,
-                 UMAP_1 = ETV6_2020@reductions$umap@cell.embeddings[,1],
-                 UMAP_2 = ETV6_2020@reductions$umap@cell.embeddings[,2]
-                 )
-
-df_HSPC <- df[df$celltypes == "HSPC",]
-df_HSPC_ctrl <- df_HSPC[df_HSPC$ETV6status == "Controls",]
-df_HSPC_pat <- df_HSPC[df_HSPC$ETV6status == "Patients",]
-
-
-ggplot(df,
-       aes(x=UMAP_1,y=UMAP_2),
-       label = rownames(df))+
-  geom_point(alpha=0.5,
-             color="grey",
-             size = 0.5)+
-  geom_point(data = df_HSPC_ctrl,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="salmon",
-             size = 0.5)+
-  geom_point(data = df_HSPC_pat,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="cornflowerblue",
-             size = 0.5)+
-  theme_classic()
-```
-
-### Encart CMPs
-```{r}
-df_CMP <- df[df$celltypes == "CMP",]
-df_CMP_ctrl <- df_CMP[df_CMP$ETV6status == "Controls",]
-df_CMP_pat <- df_CMP[df_CMP$ETV6status == "Patients",]
-
-ggplot(df,
-       aes(x=UMAP_1,y=UMAP_2),
-       label = rownames(df))+
-  geom_point(alpha=0.5,
-             color="grey",
-             size = 0.5)+
-  geom_point(data = df_CMP_ctrl,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="salmon",
-             size = 0.5)+
-  geom_point(data = df_CMP_pat,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="cornflowerblue",
-             size = 0.5)+
-  theme_classic()
-```
-
-### Encart CMP-Primed
-```{r}
-df_CMP_Primed <- df[df$celltypes == "CMP_Primed",]
-df_CMP_Primed_ctrl <- df_CMP_Primed[df_CMP_Primed$ETV6status == "Controls",]
-df_CMP_Primed_pat <- df_CMP_Primed[df_CMP_Primed$ETV6status == "Patients",]
-
-ggplot(df,
-       aes(x=UMAP_1,y=UMAP_2),
-       label = rownames(df))+
-  geom_point(alpha=0.5,
-             color="grey",
-             size = 0.5)+
-  geom_point(data = df_CMP_Primed_ctrl,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="salmon",
-             size = 0.5)+
-  geom_point(data = df_CMP_Primed_pat,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="cornflowerblue",
-             size = 0.5)+
-  theme_classic()
-```
-
-### Encart GMP
-```{r}
-df_GMP <- df[df$celltypes == "GMP",]
-df_GMP_ctrl <- df_GMP[df_GMP$ETV6status == "Controls",]
-df_GMP_pat <- df_GMP[df_GMP$ETV6status == "Patients",]
-
-ggplot(df,
-       aes(x=UMAP_1,y=UMAP_2),
-       label = rownames(df))+
-  geom_point(alpha=0.5,
-             color="grey",
-             size = 0.5)+
-  geom_point(data = df_GMP_ctrl,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="salmon",
-             size = 0.5)+
-  geom_point(data = df_GMP_pat,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="cornflowerblue",
-             size = 0.5)+
-  theme_classic()
-```
-
-### Encart MEP
-```{r}
-df_MEP <- df[df$celltypes == "MEP",]
-df_MEP_ctrl <- df_MEP[df_MEP$ETV6status == "Controls",]
-df_MEP_pat <- df_MEP[df_MEP$ETV6status == "Patients",]
-
-ggplot(df,
-       aes(x=UMAP_1,y=UMAP_2),
-       label = rownames(df))+
-  geom_point(alpha=0.5,
-             color="grey",
-             size = 0.5)+
-  geom_point(data = df_MEP_ctrl,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="salmon",
-             size = 0.5)+
-  geom_point(data = df_MEP_pat,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="cornflowerblue",
-             size = 0.5)+
-  theme_classic()
-```
-
-### Encart MkP_Mk
-```{r}
-df_MkP_Mk <- df[df$celltypes == "MkP_Mk",]
-df_MkP_Mk_ctrl <- df_MkP_Mk[df_MkP_Mk$ETV6status == "Controls",]
-df_MkP_Mk_pat <- df_MkP_Mk[df_MkP_Mk$ETV6status == "Patients",]
-
-ggplot(df,
-       aes(x=UMAP_1,y=UMAP_2),
-       label = rownames(df))+
-  geom_point(alpha=0.5,
-             color="grey",
-             size = 0.5)+
-  geom_point(data = df_MkP_Mk_ctrl,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="salmon",
-             size = 0.5)+
-  geom_point(data = df_MkP_Mk_pat,
-             aes(x=UMAP_1,y=UMAP_2),
-             color="cornflowerblue",
-             size = 0.5)+
-  theme_classic()
-```
-
-## Radar plots {.tabset}
-### Panel A
-![radar_plot_0_to_100](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/Radarplot_Percent_0_100_Pool_Ctrl_Pat.png)
-
-### Panel B
-![radar_plot_MAX](/home/bigott/workspace/Papers/ETV6/99_figures_papier/01_figure_1/Radarplot_Ctrl_Pat_Pool_Max_pecent.png)
 
 
 # Figure 6 {.tabset}
