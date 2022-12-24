@@ -184,8 +184,27 @@ DoHeatmap(object = pat.object, features = as.character(top_genes$gene),group.by 
 
 # supp_figure 8
 ```{r,fig.width=10,fig.height=20}
-# translation pathways
-ribosomal_genes <- c("RPS6","RPL4","RPL5","RPL30","MRPS15","RPL3","RPL32","RPL31","RPL34","RPLP1","RPLP0","RPL8","RPL10A","RPL9","RPL6","RPL7","RPS15","EEF1B2","RPS4X","RPS14","RPL7A","MTRF1","RPS16","EEF2K","RPS19","RPL18A","RPS18","RPL36","RPLP2","RPL38","RPL37","RPS11","RPL39","RPS10","RPS13","RPS9","RPL21","RPS7","RPS8","RPS5","RPL22","DRPS","RPL13A","RPSA","RPS3A","EEF1A1","EEF1G","EEF1D","NOA1","RPL37A","RPL24","RPL27","RPL26","RPL29","RPL28","MRRF","RPL12","RPL11","MRPL16","RPL36A","RPS4Y1","GSPT2","MRPL10","RPS15A","RPL14","RPS3","RPL13","RPL15","RPL18","RPS27A","RPL17","EIF4B","RPL19","RPL41","MTERF4","GATC","RPL35A","RPL23A","EEF2","HARS2","RPS25","RPS28","RPS27","QARS","TNIP1","RPS29","RPL27A","RPS20","RPS21","RSL24D1","RPS24","RPS23")
-
-DoHeatmap(ETV6_2020, features = ribosomal_genes, group.by = "ETV6status", assay = "RNA", slot = "scale.data", label = T, raster = F, cells = rownames(ETV6_2020@meta.data[ETV6_2020@meta.data$celltypes == "MkP_Mk",]), ) + scale_fill_gradientn(colors = c("blue","white","red"))
+# translation pathway
+Idents(ETV6_2020) <- "celltypes_ETV6status"
+ETV6_2020@meta.data$celltypes_ETV6status <- factor(ETV6_2020@meta.data$celltypes_ETV6status,
+                                           levels = c("Controls_HSPC", "Patients_HSPC","Controls_CMP", "Patients_CMP","Controls_CMP_Primed", "Patients_CMP_Primed","Controls_GMP", "Patients_GMP","Controls_MEP", "Patients_MEP","Controls_MkP_Mk", "Patients_MkP_Mk","Controls_Plt")
+                                           )
+dp <- DotPlot(ETV6_2020,
+              idents = c("Controls_MEP", "Patients_MEP","Controls_MkP_Mk", "Patients_MkP_Mk"),
+              features = ribosomal_genes
+              ) + 
+  geom_point(aes(size=pct.exp),
+             shape = 21,
+             colour="black",
+             stroke=0.5
+             ) + 
+  scale_colour_gradient2(low = "steelblue",
+                         mid = "ivory1",
+                         high = "red"
+                         ) + 
+  guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))
+         ) + 
+  RotatedAxis(
+  )
+dp
 ```
