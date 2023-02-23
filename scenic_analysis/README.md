@@ -29,7 +29,7 @@ In order to prepare the environment for analysis execution, it is required to:
 	<li> Download the raw expression matrix obtained after Seurat analysis</li> 
 </ul>
 
-<h2>1)Clone the github repository</h2>
+<h2>1) Clone the github repository</h2>
 Use you favorite method to clone this repository in a chosen folder. This will create a "ETV6_2020" folder with all the source code. You must set an environment variable called WORKING_DIR with a value set to the path to this folder.
 
 On linux:
@@ -37,7 +37,7 @@ On linux:
 
 
 
-<h2>2)Download the docker images</h2>
+<h2>2) Download the docker images</h2>
 Docker images tar file are stored on Zenodo. Open a shell command and change dir to the root of the cloned Git repository. Then execute the following commands to download the images tar files to the right project folder:
 
 <pre><code>wget https://zenodo.org/record/6980009/files/pyscenic0112.tar?download=1 -o $WORKING_DIR/ETV6_2020/docker_images/docker/scenic/pyscenic0112.tar</pre></code>
