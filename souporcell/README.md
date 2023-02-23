@@ -61,8 +61,7 @@ If you prefer to perform the fastq data pre-processing, instructions are describ
 Souporcell analysis needs 3 inputs (for more details see,https://github.com/wheaton5/souporcell):
 1- BAM file from cellranger output
 2- "barcodes.tsv" file from cellranger output
-3- Reference genome GRCh38-2020-A (available on zenodo : https://zenodo.org/record/6980009/files/refdata-gex-GRCh38-2020-A.tar.gz
-?download=1)
+3- Reference genome GRCh38-2020-A (available on zenodo : https://zenodo.org/record/6980009/files/refdata-gex-GRCh38-2020-A.tar.gz?download=1)
 
 Run the analysis
 
