@@ -1,4 +1,4 @@
-# ETV6_2020 : FASTQ preprocessing
+# FLI1_2021 : FASTQ preprocessing
 
 ## Overview
 
@@ -41,7 +41,7 @@ In order to prepare the environment for analysis execution, it is required to:
 </ul>
 
 <h3>1) Clone the github repository</h3>
-Use you favorite method to clone this repository in a chosen folder. This will create a "ETV6_2020" folder with all the source code. 
+Use you favorite method to clone this repository in a chosen folder. This will create a "FLI1_2021" folder with all the source code. 
 
 You must set an environment variable called WORKING_DIR with a value set to the path to this folder.
 
@@ -73,7 +73,7 @@ Output will be generated in the <WORKING_DIR>/preprocessing/output
 <b>Input</b>
 
 Fastq files are avaible in SRA (...).
-Pre-processed data can be generated following detailed commands to run fastq preprocessing are given in the "preprocessing" directory or directly downloaded in GEO (accession ID : GSE206089).
+Pre-processed data can be generated following detailed commands to run fastq preprocessing are given in the "preprocessing" directory or directly downloaded in GEO (accession ID : GSE <i>To be completed </i>).
 
 <b>Output</b>
 
@@ -93,21 +93,21 @@ To run the cellranger analysis, ensure you have correctly downloaded the fastq f
 
 <pre><code>
 # Launch singularity image
-singularity shell <WORKING_DIR>/ETV6_2020/docker_images/singularity/cellranger/cellranger5.img
+singularity shell <WORKING_DIR>/FLI1_2021/docker_images/singularity/cellranger/cellranger5.img
 
 bash
 
 # Go to the ouput directory
-cd <WORKING_DIR>/ETV6_2020/preprocessing/output
+cd <WORKING_DIR>/FLI1_2021/preprocessing/output
 
 #Run cellranger
-cellranger count --id=ETV6_2020-42-set1-GRCh38 --transcriptome=../data/cellranger_GRCh38/refdata-cellranger-GRCh38-2020-A/  --fastq=../data/ --sample=mRNA --expect-cell=10000
+cellranger count --id=FLI1_2021-42-set3-GRCh38 --transcriptome=../data/cellranger_GRCh38/refdata-cellranger-GRCh38-2020-A/  --fastq=../data/ --sample=mRNA --expect-cell=10000
 
 </pre></code>
 
 <b>Results</b>
 
-Once the analysis done, you should get result files in the <WORKING_DIR>/ETV6/preprocessing/output folder  (with the newly created "ETV6_2020-42-set1-GRCh38" folder)
+Once the analysis done, you should get result files in the <WORKING_DIR>/FLI1/preprocessing/output folder  (with the newly created "FLI1_2021-42-set3-GRCh38" folder)
 
 
 
@@ -118,7 +118,7 @@ Output will be generated in the <WORKING_DIR>/preprocessing/output where <WORKIN
 <b>Input</b>
 
 Fastq files are avaible in SRA (...).
-Pre-processed data can be generated following detailed commands to run fastq preprocessing are given in the "0_fastq_pre-processing" directory or directly downloaded in GEO (accession ID : GSE206089). 
+Pre-processed data can be generated following detailed commands to run fastq preprocessing are given in the "0_fastq_pre-processing" directory or directly downloaded in GEO (accession ID : GSE<i> To be completed </i>). 
 
 
 <b>Output</b>
@@ -139,10 +139,10 @@ To run the CITE-seq-count analysis, ensure you have correctly downloaded the fas
 
 <pre><code># Get barcodes list from cell ranger. 
 # this file is already present in the data directory, if you want to reproduce it use (else skip it) :
-zcat <WORKING_DIR>/ETV6_2020/preprocessing/ETV6_2020-42-set1_GRCh38/outs/raw_feature_bc_matrix/barcodes.tsv.gz ><WORKING_DIR>/ETV6_2020/preprocessing/data/barcodes_cellranger_nofilter_2020-42-set1.tsv
+zcat <WORKING_DIR>/FLI1_2021/preprocessing/FLI1_2021-42-set3_GRCh38/outs/raw_feature_bc_matrix/barcodes.tsv.gz ><WORKING_DIR>/FLI1_2021/preprocessing/data/barcodes_cellranger_nofilter_2021-42-set3.tsv
 
 # Go to the image directory 
-cd <WORKING_DIR>/ETV6_2020/docker_images/singularity/CITE-seq-count/
+cd <WORKING_DIR>/FLI1_2021/docker_images/singularity/CITE-seq-count/
 
 # Start the image
 singularity shell citeseq-count1.4.3.img
@@ -150,14 +150,14 @@ singularity shell citeseq-count1.4.3.img
 bash
 
 # Go to the ouput directory
-cd <WORKING_DIR>/ETV6_2020/preprocessing/output
+cd <WORKING_DIR>/FLI1_2021/preprocessing/output
 
 # Run CITE-seq-count
-CITE-seq-Count -R1 <WORKING_DIR>/ETV6_2020/preprocessing/data/S000001_HTO_S1_L001_R1_001.fastq.gz -R2 <WORKING_DIR>/ETV6_2020/preprocessing/data/S000001_HTO_S1_L001_R2_001.fastq.gz -t <WORKING_DIR>/ETV6_2020/preprocessing/data/HTO_tags.csv -cbf 1 -cbl 16 -umif 17 -umil 26 --max-errors 2 --whitelist <WORKING_DIR>/ETV6_2020/preprocessing/data/barcodes_cellranger_nofilter_2020-42-set1.tsv -cell 40000 -T 12 -o CITE-seq-count143_output
+CITE-seq-Count -R1 <WORKING_DIR>/FLI1_2021/preprocessing/data/S000001_HTO_S1_L001_R1_001.fastq.gz -R2 <WORKING_DIR>/FLI1_2021/preprocessing/data/S000001_HTO_S1_L001_R2_001.fastq.gz -t <WORKING_DIR>/FLI1_2021/preprocessing/data/HTO_tags.csv -cbf 1 -cbl 16 -umif 17 -umil 26 --max-errors 2 --whitelist <WORKING_DIR>/FLI1_2021/preprocessing/data/barcodes_cellranger_nofilter_2021-42-set3.tsv -cell 40000 -T 12 -o CITE-seq-count143_output
 </pre></code>
 
 <b>Results</b>
 
-Once the analysis done, you should get result files in the <WORKING_DIR>/ETV6_2020/preprocessing/output folder (with the newly created "CITE-seq-count143_output" folder)
+Once the analysis done, you should get result files in the <WORKING_DIR>/FLI1_2021/preprocessing/output folder (with the newly created "CITE-seq-count143_output" folder)
 
-You need to perform these analyses for each run (2020-42-set1 et 2020-42-set2).
+You need to perform these analyses for each run (2021-42-set3 et 2021-42-set5).
