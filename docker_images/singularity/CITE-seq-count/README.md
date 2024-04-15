@@ -4,7 +4,7 @@ Once the image downloaded, if singularity is installed on your system you can di
 
 #####   Download the image
 
-<pre><code>wget https://zenodo.org/record/6980009/files/citeseq-count1.4.3.img?download=1 -o $WORKING_DIR/ETV6_2020/docker_images/singularity/CITE-seq-count/citeseq-count1.4.3.img</pre></code>
+<pre><code>wget https://zenodo.org/record/6980009/files/citeseq-count1.4.3.img?download=1 -o $WORKING_DIR/FLI1_2021/docker_images/singularity/CITE-seq-count/citeseq-count1.4.3.img</pre></code>
 
 #####   Launch the image
 <pre><code>singularity shell citeseq-count1.4.3.img</pre></code>
