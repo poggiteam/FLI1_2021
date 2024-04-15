@@ -1,4 +1,4 @@
-# ETV6_2020
+# FLI1_2021
 
 This directory is made for downloading singularity images you will use to redo the different analysis once you cloned this repository.
 
