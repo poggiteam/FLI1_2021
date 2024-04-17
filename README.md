@@ -36,9 +36,13 @@ This repository contains instructions and material to reproduce the analysis rep
     - Cellranger outputs: 
       -  2021-42-set3 outputs are available under accession number GSM <i> To be completed </i>
       -  2021-42-set5 outputs are available under accession number GSM <i> To be completed </i>
+      -  Run325 outputs are available under accession number GSM <i> To be completed </i>
+      -  Run331 outputs are available under accession number GSM <i> To be completed </i>
     - CITE-seq-count outputs:
       -  2021-42-set3 outputs are available under accession number GSM <i> To be completed </i>
       -  2021-42-set5 outputs are available under accession number GSM <i> To be completed </i>
+      -  Run325 outputs are available under accession number GSM <i> To be completed </i>
+      -  Run331 outputs are available under accession number GSM <i> To be completed </i>
 
 ### Seurat analysis 
 
