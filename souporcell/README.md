@@ -1,4 +1,4 @@
-# ETV6_2020 : Souporcell analysis
+# FLI_2021 : Souporcell analysis
 
 ## Overview
 
@@ -28,7 +28,7 @@ In order to prepare the environment for analysis execution, it is required to:
 
 <b>1) Clone the github repository</b>
 
-Use you favorite method to clone this repository in a chosen folder. This will create a "ETV6_2020" folder with all the source code. You must set an environment variable called WORKING_DIR with a value set to the path to this folder.
+Use you favorite method to clone this repository in a chosen folder. This will create a "FLI_2021" folder with all the source code. You must set an environment variable called WORKING_DIR with a value set to the path to this folder.
 
 On linux:
 <pre><code>export WORKING_DIR=/enter/here/your/path/</pre></code>
@@ -54,7 +54,7 @@ Pre-processed data (CellRanger results) are available on GEO (accession ID : GSE
 	<li>mRNA_barcodes.tsv.gz</li>
 	</ul>
 </ul>
-If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/ETV6_2020/preprocessing <br>
+If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/FLI_2021/preprocessing <br>
 
 ## Run the Souporcell analysis 
 
@@ -65,10 +65,10 @@ Souporcell analysis needs 3 inputs (for more details see,https://github.com/whea
 
 Run the analysis
 
-<pre><code>$WORKING_DIR/singularity exec souporcell_latest.sif souporcell_pipeline.py -i $WORKING_DIR/ETV6_2020/.../possorted_genome_bam.bam -b $WORKING_DIR/seurat_analysis/data/mRNA/raw/barcodes.tsv -f $WORKING_DIR/ETV6_2020/.../GRCh38-2020-A.fa -o $WORKING_DIR/ETV6_2020/souporcell/outputs/ -k 4 -t 20</pre></code>
+<pre><code>$WORKING_DIR/singularity exec souporcell_latest.sif souporcell_pipeline.py -i $WORKING_DIR/FLI_2021/.../possorted_genome_bam.bam -b $WORKING_DIR/seurat_analysis/data/mRNA/raw/barcodes.tsv -f $WORKING_DIR/FLI1/.../GRCh38-2020-A.fa -o $WORKING_DIR/FLI1/souporcell/outputs/ -k 4 -t 20</pre></code>
 
 
 ##### Ouputs
 
-Once the analysis done, the results should be in you $WORKING_DIR/ETV6_2020/souporcell/outputs/ folder. Seurat analysis will use "clusters.tsv" as only souporcell input.
+Once the analysis done, the results should be in you $WORKING_DIR/FLI_2021/souporcell/outputs/ folder. Seurat analysis will use "clusters.tsv" as only souporcell input.
 This .tsv, result file is already present in the github output directory. Produced souporcell outputs objects will also be saved to this folder.
