@@ -1,0 +1,435 @@
+---
+title: "09_2021-42-set3"
+author: "Timothée Bigot"
+date: "07/10/2021"
+output: html_document
+---
+############################################################################################################################
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r env_loading, include=FALSE}
+# Load packages, data and functions
+library(sctransform)
+library(reticulate)
+library(Seurat)
+library(htmlwidgets)
+library(DT)
+library(plotly)
+library(kableExtra)
+library(monocle3)
+library(DDRTree)
+library(pheatmap)
+library(reshape2)
+library("gridExtra")
+library(knitr)
+
+# Path to the folder containing scripts used in the analysis
+CWD <- "/media/station/DATA2/01_tim/01_these/01_etv6/02_scripts/" 
+#  Path to the folder that will contain output objects
+OUTPUT_PATH <- "/media/station/DATA2/01_tim/01_these/01_etv6/04_pseudotime_data/Objets_R_Demux/last_but_not_least/"
+
+# Load the R scripts of "manual" functions
+source(paste(CWD, "Mito_function.R", sep="/"))
+source(paste(CWD, "CheckPackage.R", sep="/"))
+source(paste(CWD, "as_cell_data_set.R", sep="/"))
+
+# Set the random number seed
+set.seed(1234)
+```
+
+```{r path1_loading, include=FALSE}
+# Load path for files
+PATH_HUMAN_DATA1 <- "/media/station/DATA2/01_tim/01_these/00_Fli1/00_data/00_sets_meso/03_2021-42-set3/01_cellranger_run2021-42-set3_GRCh382020A_CR5/outs/filtered_feature_bc_matrix/"
+# SAMPLE1 <- "D6"
+PATH_HTO_DATA1 <- "/media/station/DATA2/01_tim/01_these/00_Fli1/00_data/00_sets_meso/03_2021-42-set3/02_CITE-seq-count143_run2021-42-set3__HTO_nofilter-wl_Result_hd2/umi_count/"
+```
+## Data preprocessing
+```{r Sample_loading, include=FALSE}
+# Read 10X data
+fli1_data <- Read10X(data.dir = PATH_HUMAN_DATA1, strip.suffix = T)
+
+# Create the Seurat object and applies filters 
+Not_processed_Seurat1 <- CreateSeuratObject(counts = fli1_data, min.cells = 3, min.features = 200)
+```
+
+```{r HTO1_loading, i}
+# Load in the UMI matrix
+umi_sparse <- GetAssayData(object = Not_processed_Seurat1, slot = "counts")
+# For generating a hashtag count matrix from fastq files, please refer to https://github.com/Hoohm/CITE-seq-Count.
+# Load in the HTO count matrix
+raw.hto <- Read10X(PATH_HTO_DATA1, gene.column = 1)
+hto1 <- raw.hto[c(1:3),]
+rownames(hto1) <- c("R337Q.II.1","Ctrl3","Ctrl4")
+# Select cell barcodes detected by both RNA and HTO
+# In the example datasets we have already filtered the cells for you, but perform this step for clarity.
+joint_bcs <- intersect(colnames(umi_sparse),colnames(hto1))
+# Subset RNA and HTO counts by joint cell barcodesumi_sparse <- pbmc_umi_sparse[,joint_bcs]
+hto1 <- as.matrix(hto1[,joint_bcs])
+filtered.raw.hto <- as.matrix(raw.hto[,joint_bcs])
+# Confirm that the HTO have the correct names
+print (rownames(hto1))
+```
+
+```{r}
+# sequenced HTO distribution
+par(mfrow=c(1,1))
+par(las=2)
+par(mar=c(5,15,3,3))
+barplot(rowSums(hto1), main = "sequenced HTO distribution", horiz=TRUE)
+```
+
+```{r}
+# sequenced HTO sums
+rowSums(hto1)
+```
+### Setup seurat object and add in the hto data
+```{r}
+# Setup Seurat object
+hashtag1 <- CreateSeuratObject(counts = umi_sparse[,joint_bcs], assay = "RNA")
+# Normalize RNA data with log normalization
+hashtag1 <- NormalizeData(hashtag1, display.progress = T)
+# Find and scale variable genes
+hashtag1 <- FindVariableFeatures(hashtag1, do.plot = T, selection.method = "vst", nfeatures = 2000, display.progress = T)
+hashtag1 <- ScaleData(hashtag1,genes.use = rownames(hashtag1)) #, vars.to.regress = c("S.Score", "G2M.Score") ,display.progress = FALSE)
+```
+### Adding HTO data as an independent assay
+```{r}
+# x <- colnames(hashtag1) %in% colnames(hto1)
+# table(x)["FALSE"]
+# x <- ifelse(test = colnames(hashtag1) %in% colnames(hto1), yes = NA, no = colnames(hashtag1))
+# x <- na.omit(object = x)
+# hashtag1 <- hashtag1[,!colnames(hashtag1) %in% x]
+# Add HTO data as a new assay independent from RNA
+hashtag1[["HTO"]] <- CreateAssayObject(counts = hto1)
+hashtag1 <- SetAssayData(hashtag1,assay = "HTO",slot = "counts",new.data = hto1)
+# Normalize HTO data, here we use centered log-ratio (CLR) transformation
+hashtag1 <- NormalizeData(hashtag1, assay = "HTO",normalization.method = "CLR",display.progress = FALSE)
+```
+#Demultiplex cells based on HTO enrichment
+```{r}
+#Here we use the Seurat function HTODemux() and MULTIseqDemux() to assign single cells back to their sample origins.
+# If you have a very large dataset we suggest using k_function = "clara". This is a k-medoid clustering function for large applications
+# You can also play with additional parameters (see documentation for HTODemux()) to adjust the threshold for classification
+# Here we are using the default settings
+hashtag1 <- HTODemux(hashtag1, assay = "HTO", positive.quantile = 0.99, verbose = FALSE)
+hashtag1 <- MULTIseqDemux(hashtag1, assay = "HTO",autoThresh = TRUE, maxiter = 10,qrange = seq(from = 0.1, to = 0.9, by = 0.05), verbose = TRUE)
+```
+#Import souporcell assignations
+```{r}
+all_clusters <- read.csv("/media/station/DATA2/01_tim/01_these/02_Souporcell/05_2021-42-set3/2021-42-set3/clusters.tsv", header = T, sep = "\t")
+
+hashtag1@meta.data$souporcell_classif <- "NA"
+hashtag1@meta.data[gsub(x = all_clusters[all_clusters$status == "doublet",]$barcode,"-1",""),]$souporcell_classif <- "doublet"
+hashtag1@meta.data[gsub(x = all_clusters[all_clusters$status == "unassigned",]$barcode,"-1",""),]$souporcell_classif <- "unassigned"
+hashtag1@meta.data[gsub(x = all_clusters[all_clusters$assignment == "0",]$barcode,"-1",""),]$souporcell_classif <- "cluster0"
+hashtag1@meta.data[gsub(x = all_clusters[all_clusters$assignment == "1",]$barcode,"-1",""),]$souporcell_classif <- "cluster1"
+hashtag1@meta.data[gsub(x = all_clusters[all_clusters$assignment == "2",]$barcode,"-1",""),]$souporcell_classif <- "cluster2"
+# hashtag1@meta.data[gsub(x = all_clusters[all_clusters$assignment == "3",]$barcode,"-1",""),]$souporcell_classif <- "cluster3"
+```
+##Demultiplexing results
+#Cells classification
+Cells classification as singlets, doublets and negative/ambiguous cells for HTOdemux and doublet, negative and HTO for Multiseq
+Overall, multiseq results seem  better than HTOdemux
+- HTOdemux vs Clusterisation
+```{r}
+table(hashtag1@meta.data$HTO_classification,hashtag1@meta.data$souporcell_classif)
+```
+- MULTIseqDemux vs Clusterisation
+```{r}
+table(hashtag1@meta.data$MULTI_ID,hashtag1@meta.data$souporcell_classif)
+```
+### interroger barcodes en particulier pour confirmation NA cluster et positif HTO
+```{r}
+rownames(hashtag1@meta.data[hashtag1@meta.data$souporcell_classif == "NA",])
+all_clusters[all_clusters$barcode == c("CATCCACTCGAATGGG-1"),]
+```
+### interroger barcodes en particulier pour IGV
+```{r}
+# CB identifié par IGV
+all_clusters[all_clusters$barcode == c("TGGCTGGGTTGGTTTG-1"),]
+```
+
+```{r}
+# CB identifié par IGV
+all_clusters[all_clusters$barcode == c("AGCTTGACACCATCCT-1"),]
+```
+
+```{r}
+# CB identifié par IGV
+all_clusters[all_clusters$barcode == c("TACCTTAGTTGGTTTG-1"),]
+```
+
+```{r}
+# CB identifié par IGV
+all_clusters[all_clusters$barcode == c("CACAGGCTCGTGGGAA-1"),]
+```
+### longueur et noms des Doublets
+```{r}
+rownames(hashtag1@meta.data[hashtag1@meta.data$souporcell_classif == "doublet",])
+length(rownames(hashtag1@meta.data[hashtag1@meta.data$souporcell_classif == "doublet",]))
+```
+###Select cells
+```{r cell_select1, results='asis'}
+cluster0 <- row.names(subset(hashtag1@meta.data, souporcell_classif == "cluster0" ))
+cluster1 <- row.names(subset(hashtag1@meta.data, souporcell_classif == "cluster1" ))
+cluster2 <- row.names(subset(hashtag1@meta.data, souporcell_classif == "cluster2" ))
+# cluster3 <- row.names(subset(hashtag1@meta.data, souporcell_classif == "cluster3" ))
+
+Clusters_identified1 = c(cluster0,cluster1,cluster2)
+clean.subset1 <- subset(x = hashtag1, cells = Clusters_identified1)
+VlnPlot(clean.subset1,features = c("nFeature_RNA", "nCount_RNA"),pt.size = 0.1, log = TRUE,  group.by = "souporcell_classif")
+```
+###Create Seurat definitive object
+```{r}
+  #1- QC (fait à partir de la sous sélection)
+  Seurat7 <- QC_function_mito_threshold(Seurat = clean.subset1, mito_threshold = 0.1, do_plot = TRUE)
+```
+
+```{r}
+  #2- Find variable genes
+  Seurat7 <- FindVariableFeatures(object = Seurat7, 
+                            assay = "RNA", selection.method = "vst", nfeatures = 2000,
+                            verbose = FALSE)
+  Seurat7 <- ScaleData(Seurat7, 
+                      assay="RNA",
+                      verbose = FALSE,
+                      features = rownames(Seurat7),
+                      do.center = TRUE)
+  Seurat7 <- RunPCA(object = Seurat7,
+                   assay = "RNA",
+                   verbose = FALSE,
+                   features =  VariableFeatures(object = Seurat7),
+                   seed.use = 1234,
+                   npcs = 50)
+  ElbowPlot(Seurat7, ndims = 50, reduction = "pca")
+```
+# Scorer les genes pour les composantes
+```{r}
+  Seurat7 <- ProjectDim(object = Seurat7,
+                  nfeatures.print = 10,
+                  dims.print = 1:11)
+  Seurat7 <- RunTSNE(object = Seurat7,
+                  do.fast = TRUE, 
+                  seed.use = 1234,
+                  dims = 1:11,
+                  perplexity = 40)
+  Seurat7 <- FindNeighbors(object = Seurat7, 
+                  dims = 1:11, 
+                  verbose = FALSE, 
+                  force.recalc = TRUE, 
+                  reduction = "pca",
+                  k.param = 30)
+  Seurat7 <- FindClusters(object = Seurat7, 
+                  resolution = 0.5,
+                  verbose = T,
+                  random.seed = 1234)
+  Seurat7 <- RunUMAP(object = Seurat7, reduction = "pca", seed.use = 1234, dims = 1:11)
+save(Seurat7, file = paste0(OUTPUT_PATH, "09_2021-42-set3", ".Robj"))
+```
+###UMAPs
+```{r tSNE_HTO_seurat_1}
+ggplotly(DimPlot(Seurat7, reduction = "umap", label = F, pt.size = 1, ncol = 2, group.by = "souporcell_classif", split.by = "orig.ident"))
+```
+```{r}
+ggplotly(DimPlot(Seurat7, reduction = "umap", group.by = "souporcell_classif", label = F, pt.size = 1, ncol = 2))
+table(Seurat7@meta.data$souporcell_classif)
+```
+```{r tSNE_HTO_seurat_1}
+DimPlot(Seurat1, reduction = "umap", label = F, pt.size = 1, ncol = 2, group.by = "RNA_snn_res.0.2", split.by = "orig.ident")
+DimPlot(Seurat1, reduction = "umap", label = F, pt.size = 1, ncol = 2, group.by = "RNA_snn_res.0.2", split.by = "ETV6status")
+```
+# Identité des clusters possibles grâce à table(souporcell, HTO DEMUX ou MULTI ID), aux quelques mut dans BAM, PCR et Exome
+```{r}
+Seurat7@meta.data$identity <- "NA"
+Idents(Seurat7) <- "souporcell_classif"
+Seurat7@meta.data[Seurat7@meta.data$souporcell_classif == "cluster0",]$identity = "Ctrl4"
+Seurat7@meta.data[Seurat7@meta.data$souporcell_classif == "cluster2",]$identity = "R337Q.II.1"
+Seurat7@meta.data[Seurat7@meta.data$souporcell_classif == "cluster1",]$identity = "Ctrl3"
+# Seurat7@meta.data[Seurat7@meta.data$souporcell_classif == "cluster3",]$identity = "j6F417.II.2"
+ggplotly(DimPlot(Seurat7, pt.size = 1, ncol = 2, reduction = "umap", group.by = "identity"))
+```
+```{r}
+table(Seurat7@meta.data$identity,Seurat7@meta.data$souporcell_classif)
+```
+# ETV6status
+```{r}
+Seurat7@meta.data$ETV6status <- "NA"
+Idents(Seurat7) <- "identity"
+Seurat7@meta.data[Seurat7@meta.data$identity == "Ctrl4",]$ETV6status = "01_Témoins"
+Seurat7@meta.data[Seurat7@meta.data$identity == "Ctrl3",]$ETV6status = "01_Témoins"
+Seurat7@meta.data[Seurat7@meta.data$identity == "R337Q.II.1",]$ETV6status = "02_Patient"
+# Seurat7@meta.data[Seurat7@meta.data$identity == "j6P214.III.8",]$ETV6status = "02_Patients"
+ggplotly(DimPlot(Seurat7, pt.size = 1, ncol = 2, reduction = "umap", group.by = "ETV6status"))
+```
+```{r}
+table(Seurat7@meta.data$ETV6status,Seurat7@meta.data$souporcell_classif)
+```
+
+# orig.ident
+```{r}
+Seurat7@meta.data$orig.ident <- "NA"
+Seurat7@meta.data[rownames(Seurat7@meta.data),]$orig.ident = "02_J11"
+ggplotly(DimPlot(Seurat7, pt.size = 1, ncol = 2, reduction = "umap", group.by = "orig.ident"))
+```
+```{r}
+table(Seurat7@meta.data$orig.ident)
+```
+```{r}
+save(Seurat7, file = paste0(OUTPUT_PATH, "09_2021-42-set3", ".Robj"))
+```
+############################################## MAKE SURE BEST OBJECT IT IS #################################################
+###########################################################################################################
+############################################################################################
+###########################################################################
+#############################################################
+##############################################
+##############################
+###############
+######
+###
+
+## Mitochondrial percentage versus nFeatures
+```{r mito_vs_nfeatures}
+df<-data.frame(identity=Seurat7@misc$old_meta_data$souporcell_classif,percent.mito=Seurat7@misc$old_meta_data$percent.mito,nFeature_RNA=Seurat7@misc$old_meta_data$nFeature_RNA)
+
+ggplotly(ggplot(df,aes(x=nFeature_RNA,y=percent.mito,color=identity))+geom_point())
+```
+## UMAP according to genes expression
+### findAllMarkers
+```{r, message=FALSE}
+Idents(Seurat1) <- "RNA_snn_res.0.5"
+if(! file.exists(paste0(OUTPUT_PATH, "FindAllMarkers_clusters_res0.5_results_",".Robj"))){
+Seurat_markers <- FindAllMarkers(object = Seurat1, only.pos = FALSE, min.pct = 0.25, thresh.use = 0.25, do.print = TRUE)
+  save(Seurat_markers, file = paste0(OUTPUT_PATH, "FindAllMarkers_clusters_res0.5_results_",".Robj"))
+}else{
+  load(paste0(OUTPUT_PATH, "FindAllMarkers_clusters_res0.5_results_",".Robj"))
+}
+
+datatable(Seurat_markers, options = list(pageLength = 100)) %>% formatRound(2, 1) %>% formatSignif(c(1,5))
+```
+The following plots show the expression of each cluster's top marker based on avg_logFC.
+```{r umapClusterMarkers, fig.width = 5, fig.height = 7}
+top_genes_feature_plot <- Seurat_markers %>% group_by(cluster) %>% top_n(4, avg_logFC)
+
+FeaturePlot(object = temoins, features = top_genes_feature_plot$gene[1:4], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[5:8], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[9:12], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[13:16], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[12:20], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[21:24], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[25:28], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[29:32], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[33:36], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[37:40], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[41:44], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[45:48], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[49:52], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[53:56], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+
+FeaturePlot(object = Seurat1, features = top_genes_feature_plot$gene[57:60], cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"))
+```
+### Hand picked
+```{r umapMarkers1, fig.width = 7.6, fig.height = 10, message=FALSE}
+Idents(Témoins_alone) <- "RNA_snn_res.0.5"
+FeaturePlot(object = Témoins, features = "FLT3", reduction = "umap", order = TRUE, pt.size = 1 , ncol = 2, cols = c("grey86","red"))
+```
+## UMAP according to {.tabset}
+### %mito
+```{r percentmito,  fig.width = 5, fig.height = 7}
+  Tsne<-data.frame(
+    UMAP_1 = mutants@reductions$umap@cell.embeddings[,1],
+    UMAP_2= mutants@reductions$umap@cell.embeddings[,2],
+    gene= mutants@meta.data$percent.mito)
+
+  HTO= mutants@meta.data$orig.ident
+  Max=max(mutants@meta.data$percent.mito)
+  Min=min(mutants@meta.data$percent.mito)
+
+  ggplot(Tsne,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=gene,shape=HTO))+
+    scale_colour_gradient2(low = "lightgrey",mid="grey",high="red",name="percent.mito",midpoint=(Max+Min)/2)
+```
+### nFeature
+```{r nFeature,  fig.width = 5, fig.height = 7}
+  Tsne<-data.frame(
+    UMAP_1 = j6_patient@reductions$umap@cell.embeddings[,1],
+    UMAP_2= j6_patient@reductions$umap@cell.embeddings[,2],
+    gene= j6_patient@meta.data$nFeature_RNA)
+
+  Days = j6_patient@meta.data$orig.ident
+  Max=max(j6_patient@meta.data$nFeature_RNA)
+  Min=min(j6_patient@meta.data$nFeature_RNA)
+
+  ggplot(Tsne,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=gene, shape = Days)) + 
+    scale_colour_gradient2(low = "blue",mid="orange",high="red",name="Genes expressed",midpoint=(Max+Min)/2)
+```
+### nCount
+```{r nCount,  fig.width = 5, fig.height = 7}
+  Tsne<-data.frame(
+    UMAP_1 = j11_patient@reductions$umap@cell.embeddings[,1],
+    UMAP_2 = j11_patient@reductions$umap@cell.embeddings[,2],
+    gene = j11_patient@meta.data$nCount_RNA)
+
+  Days = j11_patient@meta.data$orig.ident
+  Max=max(j11_patient@meta.data$nCount_RNA)
+  Min=min(j11_patient@meta.data$nCount_RNA)
+
+  ggplot(Tsne,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=gene, shape = Days))+
+    scale_colour_gradient2(low = "blue",mid="orange",high="red",name="mRNA count",midpoint=(Max+Min)/2)
+```
+### Cell cycle phases
+```{r phases,  fig.width = 5, fig.height = 7}
+# Assign Cell-Cycle Scores
+Témoins_alone <- CellCycleScoring(object = Témoins_alone, s.features = cc.genes$s.genes, g2m.features = cc.genes$g2m.genes, set.ident = TRUE,)
+# view cell cycle scores and phase assignments
+# Plot phases
+DimPlot(Témoins_alone, reduction = "umap", 
+        group.by = "Phase", 
+        #split.by = "hash.ID", 
+        pt.size = 1,
+        ncol = 2)
+```
+S score
+```{r  Sscore, fig.width = 5, fig.height = 7}
+# Plot S score
+  Tsne<-data.frame(
+    UMAP_1 = Seurat1@reductions$umap@cell.embeddings[,1],
+    UMAP_2= Seurat1@reductions$umap@cell.embeddings[,2],
+    gene= Seurat1@meta.data$S.Score
+  )
+  HTO= Seurat1@meta.data$hash.ID
+  Max=max(Seurat1@meta.data$S.Score)
+  Min=min(Seurat1@meta.data$S.Score)
+
+  ggplot(Tsne,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=gene,shape=HTO))+
+    scale_colour_gradient2(low = "blue",mid="orange",high="red",name="S score",midpoint=(Max+Min)/2)
+```
+G2M score
+```{r G2Mscore,  fig.width = 5, fig.height = 7}
+# Plot G2M scores
+  Tsne<-data.frame(
+    UMAP_1 = Seurat1@reductions$umap@cell.embeddings[,1],
+    UMAP_2= Seurat1@reductions$umap@cell.embeddings[,2],
+    gene= Seurat1@meta.data$G2M.Score)
+
+  HTO= Seurat1@meta.data$hash.ID
+  Max=max(Seurat1@meta.data$G2M.Score)
+  Min=min(Seurat1@meta.data$G2M.Score)
+
+ ggplot(Tsne,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=gene,shape=HTO))+
+    scale_colour_gradient2(low = "blue",mid="orange",high="red",name="G2M score",midpoint=(Max+Min)/2)
+```

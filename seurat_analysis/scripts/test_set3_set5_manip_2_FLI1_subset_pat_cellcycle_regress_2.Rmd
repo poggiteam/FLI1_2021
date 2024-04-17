@@ -1,0 +1,1278 @@
+---
+title: "FLI1 patient manip 2 pat only analysis"
+author: "Laurent"
+date: "06/2022"
+always_allow_html: yes
+output: 
+  rmarkdown::html_document:
+    code_folding: hide
+    theme: cerulean
+    toc: true
+toc_float:
+  toc_collapsed: true
+pdf_document:
+  toc: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+---
+title:  "Seurat merging on FLI1 D6 and D11 pat only"
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+knitr::opts_knit$set(root.dir = "/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/")
+```
+
+## FLI1 pat analysis {.tabset .tabset-fade}
+
+### Global analysis
+
+- Loading Libraries 
+```{r env_loading, include=FALSE}
+# Load packages, data and functions
+library(sctransform)
+library(reticulate)
+
+# Load all necessary packages
+library(Seurat)
+library(scater)
+library(htmlwidgets)
+library(DT)
+library(plotly)
+library(pheatmap)
+library(reshape2)
+library("gridExtra")
+library(knitr)
+library(dplyr)
+```
+
+```{r}
+#  Path to the folder that will contain output objects
+
+OUTPUT_PATH <- "/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/RDS/Analysis_done"
+OUTPUT_PATH_SET <- "/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/RDS/Regress"
+```
+
+- Read RDS
+```{r}
+setwd(OUTPUT_PATH_SET)
+FLI1_J5 <- readRDS(paste(OUTPUT_PATH_SET,"FLI_J5_regress_no_analysis.rds", sep= "/"))
+FLI1_J11 <- readRDS(paste(OUTPUT_PATH_SET,"FLI_J11_regress_no_analysis.rds", sep = "/"))
+```
+
+- Merge D5 and 11
+```{r}
+FLI1_J11@meta.data <- FLI1_J11@meta.data[,-c(4:13)]
+FLI1_manip2_combined <- merge(FLI1_J5, y = FLI1_J11, add.cell.ids = c("D5", "D11"), project = "FLI1")
+FLI1_manip2_combined <- NormalizeData(FLI1_manip2_combined, normalization.method = "LogNormalize", scale.factor = 10000)
+table(FLI1_manip2_combined$HTO_souporcell_classification)
+```
+
+- Filter sample to keep (Not necessary to Normalize subset object: https://github.com/satijalab/seurat/issues/678)
+```{r}
+Idents(FLI1_manip2_combined) <- FLI1_manip2_combined$HTO_souporcell_classification
+# Individus à garder
+aGarder <- c("FLI1mViv")
+
+# FLI1_manip2_combined@meta.data[["HTO_souporcell_classification"]] <- FLI1_manip2_combined@meta.data[["HTO_souporcell_classification"]]
+liste_a_garder <- rownames(FLI1_manip2_combined@meta.data[FLI1_manip2_combined@meta.data[["HTO_souporcell_classification"]] %in% aGarder,])
+length(liste_a_garder)
+
+# Nouvel objet Seurat contenant uniquement les clusters d'intérêts
+FLI1_manip2_combined_filtered = FLI1_manip2_combined[,colnames(FLI1_manip2_combined) %in% liste_a_garder]
+
+
+```
+
+- Some quality controls: percentage of mitochondrial genes , Count = reads and Features = genes  
+```{r}
+mito.genes <- grep("MT-", rownames(FLI1_manip2_combined_filtered@assays$RNA), value=T)
+mito.genes
+# The [[ operator can add columns to object metadata. This is a great place to stash QC stats
+FLI1_manip2_combined_filtered[["percent.mt"]] <- PercentageFeatureSet(FLI1_manip2_combined_filtered, pattern = "MT-")
+
+#Modif LJO : Compute mitochondrial percentage threshold
+discard.mito=isOutlier(FLI1_manip2_combined_filtered[["percent.mt"]][,1],type="higher")
+mito.threshold=min(FLI1_manip2_combined_filtered[["percent.mt"]][,1][discard.mito])
+
+# Visualize QC metrics as a violin plot
+VlnPlot(FLI1_manip2_combined_filtered, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3,pt.size=0.1)
+```
+
+- Ploting nFeature_RNA and mitochondrial percent against nCount_RNA
+```{r}
+plot1 <- FeatureScatter(FLI1_manip2_combined_filtered, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", pt.size = 0.5)
+plot2 <- FeatureScatter(FLI1_manip2_combined_filtered, feature1 = "nCount_RNA", feature2 = "percent.mt", pt.size = 0.5)
+plot1
+plot2
+```
+
+- Choose top 1k variable genes
+```{r}
+FLI1_manip2_combined_filtered <- FindVariableFeatures(object=FLI1_manip2_combined_filtered, selection.method = "vst", mean.function = ExpMean, dispersion.function = LogVMR, binning.method = "equal_width", num.bin = 20, y.cutoff = 0.5, nfeatures = 1000, verbose=TRUE)
+#write.table(FLI1_manip2_combined_filtered@assays$RNA@var.features,
+#	     paste("Top1000_variable_genes.FLI1_manip2_combined_filtered.txt", sep=""),
+#	     sep="\t", quote=F, col.names=NA
+#)
+
+top40 <- head(VariableFeatures(FLI1_manip2_combined_filtered), 40)
+top100 <- head(VariableFeatures(FLI1_manip2_combined_filtered), 100)
+```
+
+- Plot variable genes:
+```{r}
+plot1 <- VariableFeaturePlot(FLI1_manip2_combined_filtered)
+LabelPoints(plot = plot1, points = top100, repel = TRUE)
+```
+
+- Assign Cell-Cycle Scores
+```{r}
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+FLI1_manip2_combined_filtered <- CellCycleScoring(FLI1_manip2_combined_filtered, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+
+# view cell cycle scores and phase assignments
+head(FLI1_manip2_combined_filtered[[]])
+```
+
+- Scaling data and regress out cell cycle
+```{r}
+# FLI1_manip2_combined_filtered <- ScaleData(FLI1_manip2_combined_filtered, vars.to.regress = c("S.Score", "G2M.Score"), features = rownames(FLI1_manip2_combined_filtered))
+# 
+# # save results in order to not run this long analysis again
+# 
+# setwd(OUTPUT_PATH_SET)
+# FLI1_manip2_combined_filtered <- saveRDS(FLI1_manip2_combined_filtered, file="17_11_22_FLI1_manip2_pat_filtered_regress_no_analysis.rds")
+```
+
+- Running a PCA on cell cycle genes after correction
+```{r}
+setwd(OUTPUT_PATH_SET)
+FLI1_manip2_combined_filtered <- readRDS("17_11_22_FLI1_manip2_pat_filtered_regress_no_analysis.rds")
+
+FLI1_manip2_combined_filtered <- RunPCA(FLI1_manip2_combined_filtered, features = VariableFeatures(object = FLI1_manip2_combined_filtered), npcs=40, pcs.print = 5, seed.use=42, rev.pca = FALSE)
+DimPlot(FLI1_manip2_combined_filtered,group.by="Phase", reduction = "pca")+ggtitle("PCA - Cell cycle")
+DimPlot(FLI1_manip2_combined_filtered, group.by = "HTO_souporcell_classification", reduction = "pca")
+```
+
+- JackStraw and ElbowPlot
+```{r}
+FLI1_manip2_combined_filtered <- JackStraw(FLI1_manip2_combined_filtered, num.replicate = 100)
+FLI1_manip2_combined_filtered <- ScoreJackStraw(FLI1_manip2_combined_filtered, dims = 1:20)
+           
+JackStrawPlot(FLI1_manip2_combined_filtered, dims = 1:15)
+           
+ElbowPlot(FLI1_manip2_combined_filtered)
+```
+
+- Perform clustering 
+```{r}
+setwd(OUTPUT_PATH)
+FLI1_manip2_combined_filtered <- FindNeighbors(object = FLI1_manip2_combined_filtered, k.param = 12, dims = 1:10, compute.SNN = TRUE, prune.SNN = 1/15)
+
+FLI1_manip2_combined_filtered <- FindClusters(object= FLI1_manip2_combined_filtered, modularity.fxn = 1,
+             resolution = 0.8, algorithm = 1, n.start = 10, n.iter = 10,
+             random.seed = 42, temp.file.location = NULL, edge.file.name = NULL,
+             verbose = TRUE)
+clusters_res <- FLI1_manip2_combined_filtered[["RNA_snn_res.0.8"]][,1]
+names(clusters_res)=colnames(FLI1_manip2_combined_filtered)
+
+# write.table(clusters_res,
+# 	    "clusters_res_1.5_FLI1_manip2_combined_filtered.txt",
+# 	    sep="\t", quote=F, col.names=NA)
+```
+
+- Look at PCA results again, with clusters
+```{r}
+DimPlot(FLI1_manip2_combined_filtered, dims=c(1, 2), reduction = "pca", pt.size=1)
+DimPlot(FLI1_manip2_combined_filtered, dims=c(3, 4), reduction = "pca", pt.size=1)
+```
+
+- UMAP 
+```{r}
+setwd(OUTPUT_PATH)
+FLI1_manip2_combined_filtered <- RunUMAP(FLI1_manip2_combined_filtered, dims = 1:10, umap.method="uwot", seed.use=10, n.components=2, n.neighbors = 10 , spread=1, min.dist=0.1)
+DimPlot(FLI1_manip2_combined_filtered, reduction = "umap", pt.size=0.7, label = TRUE)
+
+# note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+UMAP_coord <- FLI1_manip2_combined_filtered@reductions$umap@cell.embeddings
+# write.table(UMAP_coord,
+# 	    "UMAP_coordinates_FLI1_manip2_combined_filtered.txt",
+# 	    sep="\t", quote=F, col.names=NA
+# )
+```
+
+- UMAP Cell cycling
+```{r}
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+ 
+FLI1_manip2_combined_filtered <- CellCycleScoring(FLI1_manip2_combined_filtered,s.features = s.genes, g2m.features = g2m.genes)
+DimPlot(FLI1_manip2_combined_filtered,group.by="Phase")+ggtitle("UMAP - Cell cycle")
+```
+
+- tSNE: 
+```{r}
+FLI1_manip2_combined_filtered <- RunTSNE(object= FLI1_manip2_combined_filtered,  dims = 1:10, dim.embed = 2, seed.use = 42, tsne.method="Rtsne", reduction="pca")
+DimPlot(FLI1_manip2_combined_filtered, reduction = "tsne", pt.size=0.7, label = TRUE)
+tSNE_coord <- FLI1_manip2_combined_filtered@reductions$tsne@cell.embeddings
+# write.table(tSNE_coord,
+# 	    "tSNE_coordinates_FLI1_manip2_combined_filtered.txt",
+# 	    sep="\t", quote=F, col.names=NA
+# )
+```
+
+- Top marker genes by clusters and exclude ribosomal genes
+```{r}
+setwd(OUTPUT_PATH)
+
+ribosomal_genes <- c("RPS17","RPS9","MRPS18B","RPS18","MRPS36","MRPS18B","RPS4Y2","RPS4Y1","RPS25","RPL7A","MRPS6","MRPS18B","RPS18","MRPS18B","RPS18","MRPL57","TBCE","RPS18","MRPS12","MRPS31","RPL3","MRPL23","RPL3L","RPS2","RPL17-C18orf32","RPS4X","RPS13","RPL36","RPS21","RPL21","RPL14","MRPS24","MRPL54","RPS24","RPS15A","RPS6","MRPS25","MRPL36","RPL36AL","MRPS17","MRPL16","MRPS30","FAU","MRPS16","RPS7","RPL23","RPS10","RPL10L","RPL35","RPL17","SRBD1","RPL22","RPL4","MRPS36","RPL37","MRPS2","RPL36A","RPL36A-HNRNPH2","RPL30","MRPL49","RPS19","RPL12","RPS5","RPS27L","RPS29","RPSA","MRPL33","MRPL1","RPS17","RPL10","MRPL13","MRPL19","MRPL15","MRPL41","RPS12","MRPS9","MRPS11","MRPL3","RPL31","RPS3","RPL38","RPL22L1","RPL39","MRPL46","RPL18A","RPL7","RPS3A","RPLP2","RPLP0","RPS16","MRPL23","MRPL22","MRPL18","RPL7L1","MRPL2","MRPS34","MRPS33","RPL28","RPL7A","MRPL4","RPL35A","RPL13","RPL24","RPS20","RPS15","MRPL14","MRPL21","MRPL32","NDUFA7","RPS28","RPL15","RPL18","RPL9","RPL37A","RPS11","MRPS23","MRPL52","MRPL43","MRPS18B","RPLP1","MRPS18A","RSL24D1","RPL27","RPL13A","MRPS14","MRPL47","MRPS35","RPL8","RPL26L1","MRPL11","RPL26","TBCE","RPS27AP5","MRPL34","MRPS12","MRPS5","MRPS18C","RPL29","RPL39L","MRPL28","MRPL51","RPL34","RPL10A","MRPL12","RPL32","RPS14","MRPL35","MRPL17","RPL11","RPS23","RPS9","RPL23A","RPS18","MRPL42","MRPL10","UBA52","DAP3","MRPS7","RPL19","RPS25","RPS26","RPL41","MRPS22","RPL6","RPS8","TBCE","MRPL30","RPS27","RPL27A","MRPS21","MRPL27","MRPL20","MRPL55","MRPL37","RPS27A","MRPL24","RPL5","MRPL9","MRPS15")
+
+all.genes <- rownames(FLI1_manip2_combined_filtered)
+ribosomal_genes_filtered <- ribosomal_genes[!duplicated(ribosomal_genes)]
+all.genes_without_ribosomal = setdiff(all.genes, ribosomal_genes_filtered)
+# length(ribosomal_genes)
+# length(ribosomal_genes_filtered)
+# length(all.genes)
+# length(all.genes_without_ribosomal)
+for(i in 0:(max(as.numeric(levels(FLI1_manip2_combined_filtered@meta.data$seurat_clusters))))) {
+  assign(paste("cluster", i,".markers", sep = ""), FindMarkers(FLI1_manip2_combined_filtered, features = all.genes_without_ribosomal, ident.1 = i, test.use = "bimod", only.pos = TRUE))
+    print(paste("cluster", i,".markers", sep = ""))
+    print(head(get(paste("cluster", i,".markers", sep = "")),n=50))
+#     write.table(get(paste("cluster", i,".markers", sep = "")),
+# 		paste("cluster", i,"markers_FLI1_manip2_combined_filtered.txt", sep = "_"),
+# 		quote=FALSE,row.names = TRUE)
+}
+```
+
+- Dimensional reduction plot, with cells colored by a quantitative feature
+```{r echo=FALSE}
+# gene_list <- c("CRHBP","EMCN","HLF","AVP","SPINK2","CSF3R","GLIPR1","MIAT","IGHM","ITGA2B", "CD34","ELANE","AZU1","SERPINB10","MPO", "PRTN3", "CSF1R", "KLF1","TFR2","MPIG6B","GP9", "PF4", "SELP", "VWF","KIT")
+
+
+gene_list <- c("THY1","PROM1","FLT3","CRHBP","HOPX","AVP","KIT","SPINK2","IGHM","GLIPR1","CSF3R","CPA3","CLC","PRG2","TPSAB1","RHEX","ALOX5AP","MS4A2","CD9","LMNA","CAVIN2","LAT","VWA5A","ITGA2B","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44","MPO","ELANE","PRTN3","AZU1","SERPINB10","CTSG","CSTA","RNASE3","CD38","TFRC","DEPTOR","KLF1","ACSM3","APOC1","TFR1","ANK1","TMSB10","ALDH1A1","MT-ATP8","H2AY","GYPB","CED","TFR2","HBB","APOC1","ANK1","ACSM3","BLVRB","CD9","STOM","LAT","PLEK","GP9","GP6","GP1BA","PF4","RASGRP2","MPIG6B","VWF","PPBP","LTBP1","SH3BP5","SELP","TMEM40","P2YR1","MYH10","MYH9","SLFN14","CD74","VIM","RNASE2","CSF2R","TUBB1","RAB27B","HPSE","FSCN1")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.6))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+
+```
+
+### Celltype signature (Supervised Method)
+
+- Plot HSPC signature using 5 best candidate genes
+```{r}
+# list("THY1","PROM1","FLT3","CRHBP","HOPX","AVP","KIT","SPINK2","CSF3R","AVP","IGHM","GIPR")
+tryCatch({
+  FLI1_manip2_combined_filtered <- AddModuleScore(FLI1_manip2_combined_filtered, features = list(c("AVP","PROM1","CRHBP","FLT3","HOPX","IGHM","GLIPR1")),
+name = "HSPC")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+
+FeaturePlot(object = FLI1_manip2_combined_filtered, features = "HSPC1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for HSPC signature
+```{r}
+gene_list <- c("AVP","PROM1","CRHBP","FLT3","HOPX","IGHM","GLIPR1")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot CMP signature using 5 best candidate genes
+```{r}
+# list("CSF3R","CPA3","CLC","PRG2","TPSAB1","RHEX","ALOX5AP","MS4A2")
+tryCatch({
+  FLI1_manip2_combined_filtered <- AddModuleScore(FLI1_manip2_combined_filtered, features = list(c("CPA3","PRG2","RHEX","ALOX5AP","MS4A2")),
+name = "CMP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_filtered, features = "CMP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for CMP signature
+```{r}
+gene_list <- c("CPA3","PRG2","RHEX","ALOX5AP","MS4A2")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot CMP-MK-primed signature using 5 best candidate genes
+```{r}
+# list("CD9","LMNA", "CAVIN2","LAT","VWA5A","ITGA2B","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44")
+# list("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44","ITGA2B")
+tryCatch({
+  FLI1_manip2_combined_filtered <- AddModuleScore(FLI1_manip2_combined_filtered, features = list(c("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44")),
+name = "CMP_MK_primed")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_filtered, features = "CMP_MK_primed1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for CMP-MK-primed signature
+```{r}
+gene_list <- c("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot CMP-non-primed signature using 5 best candidate genes
+```{r}
+tryCatch({
+  FLI1_manip2_combined_filtered <- AddModuleScore(FLI1_manip2_combined_filtered, features = list(c("MS4A3","RNASE2","CLC","CSF2RB","EPX","CTSG")),
+name = "CMP_non_primed")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_filtered, features = "CMP_non_primed1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for CMP-non-primed signature
+```{r}
+gene_list <- c("MS4A3","RNASE2","CLC","CSF2RB","EPX","CTSG")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot GMP signature using 5 best candidate genes
+```{r}
+# list("MPO","ELANE","PRTN3","AZU1","SERPINB10", "CTSG","CSTA","RNASE3")
+# list("CSTA","MPO","ELANE","PRTN3","AZU1","IFT122","RNASE3")
+# CED not present in genes dataset
+tryCatch({
+FLI1_manip2_combined_filtered <- AddModuleScore(FLI1_manip2_combined_filtered, features = list(c("CSTA","MPO","ELANE","PRTN3","AZU1","RNASE3")),
+name = "GMP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_filtered, features = "GMP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for GMP signature
+```{r}
+gene_list <- c("CSTA","MPO","ELANE","PRTN3","AZU1","RNASE3")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MEP signature using 5 best candidate genes
+```{r}
+# list("CD38","TFRC","DEPTOR","KLF1","ACSM3","APOC1","ANK1","TMSB10","ALDH1A1","GYPB")
+# list("CD38","KLF1","DEPTOR","ACSM3","APOC1","TFRC","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB", "H2AY")
+# list("KLRG1","IER2","KBTBD8","GASK1B","MINAR1","RAPH1","ZNF449","TNMD","TMEM98","MED17","PREX2","PER3","CELSR1","PIAS2","EMC2","KCNN4","ICAM5","DNASE2","AL021546,1","MRPL18","EXOC2","CNOT6","MSH3")
+# list("CD38","KLF1","DEPTOR","ACSM3","APOC1","TFRC","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB")
+
+# H2AY =  MACROH2A1(not present) and TFR1 = TFRC
+tryCatch({
+FLI1_manip2_combined_filtered <- AddModuleScore(FLI1_manip2_combined_filtered, features = list(c("CD38","KLF1","DEPTOR","ACSM3","APOC1","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB","TFRC")),name = "MEP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_filtered, features = "MEP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MEP signature
+```{r}
+gene_list <- c("CD38","KLF1","DEPTOR","ACSM3","APOC1","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB","TFRC")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MEP-ERP signature using 5 best candidate genes
+```{r}
+# list("TFR2","HBB","APOC1","ANK1","ACSM3","BLVRB")
+# list("BLVRB","HBB","APOC1","TFR2")
+# list("KLF1","AHSPP","RHAG")
+# list("KLF1","AHSPP","RHAG", "APOC1","TFR2")
+# list("KLF1","RHAG", "APOC1","TFR2")
+
+tryCatch({
+FLI1_manip2_combined_filtered <- AddModuleScore(FLI1_manip2_combined_filtered, features = list(c("HBB","BLVRB","APOC1","TFR2")),name = "MEP_ERP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_filtered, features = "MEP_ERP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MEP-ERP signature
+```{r}
+gene_list <- c("HBB","BLVRB","APOC1","TFR2")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MEP-MKP signature using 5 best candidate genes
+```{r}
+# list("CD9","STOM","LAT","PLEK","ITGA2B")
+# list("C3orf58","PDIA5","RGS18","PDGFA","PLEK","ARHGAP6")
+tryCatch({
+FLI1_manip2_combined_filtered <- AddModuleScore(FLI1_manip2_combined_filtered, features = list(c("PDIA5","RGS18","PDGFA","PLEK","ARHGAP6")) ,name = "MEP_MKP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_filtered, features = "MEP_MKP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MEP-MkP signature
+```{r}
+gene_list <- c("PDIA5","RGS18","PDGFA","PLEK","ARHGAP6")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MKP_MK signature using 5 best candidate genes
+```{r}
+# list("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40","GP6","GP1BA","RASGRP2")
+# list("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40")
+# list("PF4","GP6","VWF","TRPC6","ITGB3","FCER1G","SELP")
+tryCatch({
+FLI1_manip2_combined_filtered <- AddModuleScore(FLI1_manip2_combined_filtered, features = list(c("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40")),
+name = "MKP_MK")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_filtered, features = "MKP_MK1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MkP_Mk signature
+```{r}
+gene_list <- c("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MoMacro signature using 5 best candidate genes
+```{r}
+tryCatch({
+FLI1_manip2_combined_filtered <- AddModuleScore(FLI1_manip2_combined_filtered, features = list(c("MERTK","SPP1","S100A8","S100A9","LILRB2","ITGAM","CD14","CD68","FCN1","VCAN")),
+name = "MoMacro")
+
+FeaturePlot(object = FLI1_manip2_combined_filtered, features = "MoMacro1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+}, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+```
+
+- Looking individual gene expression for MoMacro signature
+```{r}
+gene_list <- c("MERTK","SPP1","S100A8","S100A9","LILRB2","ITGAM","CD14","CD68","FCN1","VCAN","TLR4")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Look genes representative about a signature differenciation (Supervised method)
+```{r,fig.width=15,fig.height=5}
+signature = list(HSPC = c("PROM1","CRHBP","FLT3","HOPX","IGHM","SPINK2","CSF3R","GLIPR1"), #"AVP", #
+                 CMP = c("CPA3","PRG2","RHEX","ALOX5AP","MS4A2","CLC","RNASE2","CSF2RB","CTSG"),
+                 #primedCMP = c("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44"),
+                 #NoprCMP = c("MS4A3","RNASE2","CLC","CSF2RB","EPX","CTSG"),
+                 GMP =  c("MPO","ELANE","PRTN3","AZU1","RNASE3"), #"CSTA"
+                 MP_M = c("CTSH","LYZ","SAMHD1","S100A8","S100A9","IGSF6","ITGAM","CD14","CD68","FCN1"),
+                 MEP = c("STXBP5","CD38","KLF1","ALDH1A1","BLVRB","HBB","GYPB","MYH10","FSCN1"), #"MT-ATP8","DEPTOR","ACSM3","TMSB10","TFRC","APOC1","ANK1"
+                 #ERP = c("HBB","BLVRB","APOC1","TFR2"),
+                 MKP_MK = c("RGS18","VWA5A","CAVIN2","LMNA","LAT","CD9","ITGA2B","MPIG6B","PF4","GP9","GP6","GP1BA","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40","TUBB1","RAB27B","HPSE"))
+
+FLI1_manip2_combined_filtered_copy <- FLI1_manip2_combined_filtered
+# Define an order of cluster identities
+Idents(FLI1_manip2_combined_filtered_copy) <- FLI1_manip2_combined_filtered_copy@meta.data$seurat_clusters
+my_levels <- c(7,0,1,4,5,2,9,3,10,8,6)
+Idents(FLI1_manip2_combined_filtered_copy) <- factor(Idents(FLI1_manip2_combined_filtered_copy), levels= my_levels)
+
+# clean les gènes en soublons par type cellulaires
+un <- unlist(signature)
+res <- Map(`[`, signature, relist(!duplicated(un), skeleton = signature))
+
+dp <- DotPlot(FLI1_manip2_combined_filtered_copy, features = res, dot.scale = 5) + theme(axis.text.x = element_text(size = 12), text = element_text(size = 14),legend.title = element_text(size=14), legend.text = element_text(size=15)) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +  scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() 
+dp
+```
+
+- Personal signature without celltype
+```{r,fig.width=15,fig.height=5}
+
+my_levels <- c(7,0,1,4,5,2,9,3,10,8,6)
+
+res <- c("AVP","PROM1","CRHBP","FLT3","HOPX","IGHM","SPINK2","CSF3R","CPA3","PRG2","RHEX","ALOX5AP","MS4A2","CLC","RNASE2","CSF2RB","CTSG","MPO","ELANE","PRTN3","AZU1","RNASE3","STXBP5","CD38","KLF1","ALDH1A1","BLVRB","HBB","GYPB","MYH10","FSCN1","VWA5A","CAVIN2","LMNA","LAT","CD9","ITGA2B","MPIG6B","PF4","GP9","GP6","GP1BA","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40","TUBB1","RAB27B","HPSE","RGS18")
+
+dp <- DotPlot(FLI1_manip2_combined_filtered_copy, features = res, dot.scale = 5) + theme(axis.text.x = element_text(size = 10), text = element_text(size = 14),legend.title = element_text(size=14), legend.text = element_text(size=15)) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +  scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() 
+dp
+```
+
+- Signature littérature
+```{r, fig.width=18,fig.height=5}
+
+signature = list(HSPC = c("THY1","PROM1","FLT3","CRHBP1","HOPX","AVP","KIT","SPINK2","CSF3R"),
+                 CMP = c("CPA3","CLC","PRG2","TPSAB1"),
+                 GMP =  c("MPO","ELANE","PRTN3","AZU1","SERPINB10","CTSG"),
+                 MP_M = c("MERTK","SPP1","S100A8","S100A9","LILRB2","ITGAM","CD14","CD68","FCN1","VCAN"),
+                 MEP = c("CD38","TFRC","DEPTOR","KLF1","TFR2","HBB","APOC1","ANK1","ACSM3"),
+                 MKP_MK = c("VWA5A","LMNA","CAVIN2","LAT","CD9","STOM","PLEK","ITGA22B","GP9","GP6","GP1BA","PF4","RASGRP2","MPIG6B","VWF","PPBP","SELP","LTBP"))
+
+
+FLI1_manip2_combined_filtered_copy <- FLI1_manip2_combined_filtered
+# Define an order of cluster identities
+my_levels <- c(7,0,1,4,5,2,9,3,10,8,6)
+Idents(FLI1_manip2_combined_filtered_copy) <- factor(Idents(FLI1_manip2_combined_filtered_copy), levels= my_levels)
+
+# clean les gènes en doublons par type cellulaires
+un <- unlist(signature)
+res <- Map(`[`, signature, relist(!duplicated(un), skeleton = signature))
+
+ 
+dp <- DotPlot(FLI1_manip2_combined_filtered_copy, features = res, dot.scale = 5) + theme(axis.text.x = element_text(size = 10), text = element_text(size = 14),legend.title = element_text(size=14), 
+        legend.text = element_text(size=15)) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +  scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() 
+dp
+```
+
+### Celltype signature (Unsupervised Method)
+
+- Table: Top DE gene expression by cluster  
+Checking most differentially expressed gene with FindAllMarkers in each clusters compared to all others.
+```{r top_DE_table, echo=FALSE, message=FALSE, warning=FALSE}
+# FindAllMarkers
+Idents(FLI1_manip2_combined_filtered) <- "RNA_snn_res.0.8"
+markers <- FindAllMarkers(FLI1_manip2_combined_filtered, features = all.genes_without_ribosomal,only.pos = T, test.use = "bimod", min.pct = 0.1, logfc.threshold = 0.2)
+
+# table
+top5_genes <- markers %>% group_by(cluster) %>% top_n(5, avg_log2FC)
+top20_genes <- markers %>% group_by(cluster) %>% top_n(20, avg_log2FC)
+# write.table(top_genes, file = paste(OUTPUT_PATH, "top_ST_SM4.csv", sep = "/"))
+datatable(markers, filter = 'top', options = list(pageLength = 20)) %>% formatRound(2:4, 2) %>% formatSignif(c(1,5), digits = 2)
+```
+
+- Heatmap 
+TOP 20 gene by cluster 
+```{r Heatmap_pat,  echo=FALSE,  fig.width=15,fig.height=20}
+# setwd(OUTPUT_PATH)
+# svg(filename = "Heatmap_top20_clusters.svg", height = 15, width = 20)
+str_top_genes <- unique(as.character(top20_genes$gene))
+DoHeatmap(object = FLI1_manip2_combined_filtered, features = as.character(top20_genes$gene),group.by = "RNA_snn_res.0.8", group.bar = T, label = T,size = 3, draw.lines = T, lines.width = 10,group.bar.height = 0.02)+theme(text = element_text(size = 6))
+# dev.off()
+```
+
+- DotPlot 
+TOP 20 gene by cluster 
+```{r dotplot_pat, echo=FALSE, fig.width=18,fig.height=5}
+
+FLI1_manip2_combined_filtered_copy <- FLI1_manip2_combined_filtered
+# Define an order of cluster identities
+my_levels <- c(7,0,1,4,5,2,9,3,10,8,6)
+Idents(FLI1_manip2_combined_filtered_copy) <- factor(Idents(FLI1_manip2_combined_filtered_copy), levels= my_levels)
+
+dp <- DotPlot(FLI1_manip2_combined_filtered_copy, features = unique(top5_genes$gene), dot.scale = 4) + theme(axis.text.x = element_text(size = 10)) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +  scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() 
+dp
+```
+
+- ViolinPlot 
+interest genes by clusters
+```{r}
+gene_list <- c("THY1","PROM1","FLT3","CRHBP","HOPX","AVP","KIT","SPINK2","IGHM","GLIPR1","CSF3R","CPA3","CLC","PRG2","TPSAB1","RHEX","ALOX5AP","MS4A2","CD9","LMNA","CAVIN2","LAT","VWA5A","ITGA2B","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44","MPO","ELANE","PRTN3","AZU1","SERPINB10","CTSG","CSTA","RNASE3","CD38","TFRC","DEPTOR","KLF1","ACSM3","APOC1","TFR1","ANK1","TMSB10","ALDH1A1","MT-ATP8","H2AY","GYPB","CED","TFR2","HBB","APOC1","ANK1","ACSM3","BLVRB","CD9","STOM","LAT","PLEK","GP9","GP6","GP1BA","PF4","RASGRP2","MPIG6B","VWF","PPBP","LTBP1","SH3BP5","SELP","TMEM40","P2YR1","MYH10","MYH9","SLFN14","CD74","VIM","RNASE2","CSF2R","TUBB1","RAB27B","HPSE","FSCN1")
+
+FLI1_manip2_combined_filtered_copy <- FLI1_manip2_combined_filtered
+# Define an order of cluster identities
+my_levels <- c(6,8,10,3,9,2,5,4,1,0,7)
+Idents(FLI1_manip2_combined_filtered_copy) <- factor(Idents(FLI1_manip2_combined_filtered_copy), levels= my_levels)
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(VlnPlot(object = FLI1_manip2_combined_filtered_copy, features = gene_list[i]))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- ViolinPlot 
+nCount and nFeature by clusters
+```{r}
+VlnPlot(object = FLI1_manip2_combined_filtered_copy, features = "nCount_RNA")
+VlnPlot(object = FLI1_manip2_combined_filtered_copy, features = "nFeature_RNA")
+```
+
+### Summary Plot
+
+- Metadata construction
+```{r}
+setwd(OUTPUT_PATH)
+metadata <- as.data.frame(FLI1_manip2_combined_filtered@meta.data)
+
+#Substitute "RNA_snn_res.0.5" with "RNA_snn_res"
+#colnames(metadata)=gsub("RNA_snn_res.[0-9.]+$","RNA_snn_res",colnames(metadata))
+metadata$UMAP_1 <- FLI1_manip2_combined_filtered@reductions$umap@cell.embeddings[,1]
+metadata$UMAP_2 <- FLI1_manip2_combined_filtered@reductions$umap@cell.embeddings[,2]
+metadata$tSNE_1 <- FLI1_manip2_combined_filtered@reductions$tsne@cell.embeddings[,1]
+metadata$tSNE_2 <- FLI1_manip2_combined_filtered@reductions$tsne@cell.embeddings[,2]
+metadata$PC1 <- FLI1_manip2_combined_filtered@reductions[["pca"]]@cell.embeddings[,1]
+metadata$PC2 <- FLI1_manip2_combined_filtered@reductions[["pca"]]@cell.embeddings[,2]
+
+for(i in 1:length(rownames(metadata))){
+  metadata$timepoint[i] <- strsplit(rownames(metadata), split="_")[[i]][1]
+}
+
+FLI1_manip2_combined_filtered@meta.data$timepoint <- metadata$timepoint
+# write.table(metadata,
+# 	    "metadata_FLI1_manip2_combined_filtered.txt",
+# 	    sep='\t', quote=F, col.names=NA)
+
+```
+
+- Plot nFeature_RNA
+The feature number per cell
+```{r}
+ggplot(metadata, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=nFeature_RNA), size=0.5)+ scale_colour_gradientn(colours=c("darkblue", "blue", "grey", "orange", "red")) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))
+```
+
+- Plot nCount_RNA
+The reads number per cell
+```{r}
+ggplot(metadata, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=nCount_RNA), size=0.5)+ scale_colour_gradientn(colours=c("darkblue", "blue", "grey", "orange", "red")) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))
+```
+
+- Ggplot function
+```{r}
+get_cluster_centroids <- function(comp_1,comp_2) {
+	coords=cbind(comp_1,comp_2)
+	clusters=clusters_res
+	centers=c()
+	for (cl in unique(clusters)) {
+		sel=clusters==cl
+		x_center=mean(coords[sel,1])
+		y_center=mean(coords[sel,2])
+		centers=rbind(centers,c(cl,x_center,y_center))
+	}
+	centers=data.frame("Cluster"=as.factor(centers[,1]),
+			   "x_center"=as.numeric(centers[,2]),
+			   "y_center"=as.numeric(centers[,3])
+			   )
+}
+
+color_ordered2=c("indianred1", "darkorange3", "olivedrab3", "red4", "palegreen", "royalblue4", "palevioletred3", "orchid3", "olivedrab2", "palegreen3", "lightseagreen", "steelblue2", "royalblue2", "turquoise1", "chocolate1", "firebrick1", "magenta", "mediumorchid1","darkgreen", "indianred2", "blue")
+```
+
+- Ggplot for all samples 
+```{r,fig.width=18,fig.height=10}
+clusters_res <- metadata$RNA_snn_res.0.8
+centers=get_cluster_centroids(metadata$UMAP_1,metadata$UMAP_2)
+p <- ggplot(metadata, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=factor(clusters_res)), size=0.5) + scale_colour_manual(values=color_ordered2) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))+geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,size=3)
+
+ggplotly(p)
+
+```
+
+- Plot by Timepoint
+```{r,fig.width=18,fig.height=10}
+Idents(FLI1_manip2_combined_filtered) <- FLI1_manip2_combined_filtered@meta.data$timepoint
+Idents(FLI1_manip2_combined_filtered) <- factor(Idents(FLI1_manip2_combined_filtered), levels=  c("D5", "D11"))
+DimPlot(FLI1_manip2_combined_filtered, group.by = "timepoint")
+```
+
+- Saving Seurat object before celltype attribution
+```{r}
+setwd(OUTPUT_PATH)
+saveRDS(FLI1_manip2_combined_filtered, file="17_11_22_FLI1_manip2_pat_filtered_cell_cycle_regress_seurat_done.rds")
+```
+
+
+- Check number of cells positives for MYH10
+```{r}
+
+df <- as.data.frame(FLI1_manip2_combined_filtered@assays$RNA@counts)
+line_interest <- df[which(rownames(df) == "MYH10"),]
+my_condition <- c()
+for (i in 1:length(colnames(line_interest))){
+  if(line_interest[1,i] >0){
+    my_condition <- append(my_condition,"ok")
+  } 
+}
+length(my_condition)
+```
+
+- Celltype attribution
+```{r,fig.width=10,fig.height=4}
+for (i in 1:length(rownames(FLI1_manip2_combined_filtered@meta.data))){
+  
+  if(FLI1_manip2_combined_filtered@meta.data$seurat_clusters[i] %in% c(6)){
+    FLI1_manip2_combined_filtered@meta.data$celltype[i] <- "HSPC"
+  }
+  if(FLI1_manip2_combined_filtered@meta.data$seurat_clusters[i] %in% c(8)){
+    FLI1_manip2_combined_filtered@meta.data$celltype[i] <- "CMP"
+  }
+  if(FLI1_manip2_combined_filtered@meta.data$seurat_clusters[i] %in% c(10)){
+    FLI1_manip2_combined_filtered@meta.data$celltype[i] <- "MkprimedCMP"
+  }
+  if(FLI1_manip2_combined_filtered@meta.data$seurat_clusters[i] %in% c(3,9,2)){
+    FLI1_manip2_combined_filtered@meta.data$celltype[i] <- "MEP"
+  }
+  if(FLI1_manip2_combined_filtered@meta.data$seurat_clusters[i] %in% c(5,4,1,0,7)){
+    FLI1_manip2_combined_filtered@meta.data$celltype[i] <- "MkP_Mk"
+  }
+}
+
+table(FLI1_manip2_combined_filtered@meta.data$celltype)
+my_levels <- c("MkP_Mk","MEP","MkprimedCMP","CMP","GMP","HSPC")
+DimPlot(FLI1_manip2_combined_filtered, reduction = 'umap', group.by = "celltype", pt.size = 0.5, label = T, order = my_levels, label.size = 3) + ggtitle("UMAP patient with Celltypes") + theme(text = element_text(size = 10))
+
+```
+
+- Saving Seurat object with celltype
+```{r}
+setwd(OUTPUT_PATH)
+saveRDS(FLI1_manip2_combined_filtered, file="17_11_22_FLI1_manip2_pat_filtered_cell_cycle_regress_seurat_done_with_celltypes.rds")
+```
+
+
+# ```{r}
+# setwd(OUTPUT_PATH)
+# FLI1_manip2_combined_filtered <- readRDS("17_11_22_FLI1_manip2_pat_filtered_cell_cycle_regress_seurat_done_with_celltypes.rds")
+# ```
+
+
+## FLI1 analysis subset on Cluster 8{.tabset .tabset-fade}
+
+### Global analysis
+
+- Keep Cluster 8 cells
+```{r}
+Idents(FLI1_manip2_combined_filtered) <- FLI1_manip2_combined_filtered@meta.data$seurat_clusters
+# Samples à garder 
+aGarder <- c(8)
+
+liste_a_garder <- rownames(FLI1_manip2_combined_filtered@meta.data[FLI1_manip2_combined_filtered@meta.data[["seurat_clusters"]] %in% aGarder,])
+length(liste_a_garder)
+
+# Nouvel objet Seurat contenant uniquement les clusters d'intérêts
+FLI1_manip2_combined_pat_cluster_filtered = FLI1_manip2_combined_filtered[,colnames(FLI1_manip2_combined_filtered) %in% liste_a_garder]
+```
+
+- Some counts after subset
+```{r}
+FLI1_manip2_combined_pat_cluster_filtered
+table(FLI1_manip2_combined_pat_cluster_filtered$HTO_souporcell_classification)
+```
+
+- Choose top 1k variable genes
+```{r}
+FLI1_manip2_combined_pat_cluster_filtered <- FindVariableFeatures(object=FLI1_manip2_combined_pat_cluster_filtered, selection.method = "vst", mean.function = ExpMean, dispersion.function = LogVMR, binning.method = "equal_width", num.bin = 20, y.cutoff = 0.5, nfeatures = 1000, verbose=TRUE)
+#write.table(FLI1_manip2_combined_pat_cluster_filtered@assays$RNA@var.features,
+#	     paste("Top1000_variable_genes.",experiment,"_",params$sample,".txt", sep=""),
+#	     sep="\t", quote=F, col.names=NA
+#)
+
+top40 <- head(VariableFeatures(FLI1_manip2_combined_pat_cluster_filtered), 40)
+top100 <- head(VariableFeatures(FLI1_manip2_combined_pat_cluster_filtered), 100)
+```
+
+- Plot variable genes:
+```{r}
+plot1 <- VariableFeaturePlot(FLI1_manip2_combined_pat_cluster_filtered)
+LabelPoints(plot = plot1, points = top100, repel = TRUE)
+```
+
+- Running a PCA on cell cycle genes
+```{r}
+FLI1_manip2_combined_pat_cluster_filtered <- RunPCA(FLI1_manip2_combined_pat_cluster_filtered, features = VariableFeatures(object = FLI1_manip2_combined_pat_cluster_filtered), npcs=40, pcs.print = 5, seed.use=42, rev.pca = FALSE)
+DimPlot(FLI1_manip2_combined_pat_cluster_filtered,group.by="Phase", reduction = "pca")+ggtitle("PCA - Cell cycle")
+DimPlot(FLI1_manip2_combined_pat_cluster_filtered, group.by = "HTO_souporcell_classification", reduction = "pca")
+```
+
+- JackStraw and ElbowPlot
+```{r}
+FLI1_manip2_combined_pat_cluster_filtered <- JackStraw(FLI1_manip2_combined_pat_cluster_filtered, num.replicate = 100)
+FLI1_manip2_combined_pat_cluster_filtered <- ScoreJackStraw(FLI1_manip2_combined_pat_cluster_filtered, dims = 1:20)
+           
+JackStrawPlot(FLI1_manip2_combined_pat_cluster_filtered, dims = 1:15)
+           
+ElbowPlot(FLI1_manip2_combined_pat_cluster_filtered)
+```
+
+- Perform clustering 
+```{r}
+setwd(OUTPUT_PATH)
+FLI1_manip2_combined_pat_cluster_filtered <- FindNeighbors(object = FLI1_manip2_combined_pat_cluster_filtered, k.param = 12, dims = 1:5, compute.SNN = TRUE, prune.SNN = 1/15)
+
+FLI1_manip2_combined_pat_cluster_filtered <- FindClusters(object= FLI1_manip2_combined_pat_cluster_filtered, modularity.fxn = 1,
+             resolution = 0.3, algorithm = 1, n.start = 10, n.iter = 10,
+             random.seed = 42, temp.file.location = NULL, edge.file.name = NULL,
+             verbose = TRUE)
+clusters_res <- FLI1_manip2_combined_pat_cluster_filtered[["RNA_snn_res.0.3"]][,1]
+names(clusters_res)=colnames(FLI1_manip2_combined_pat_cluster_filtered)
+
+# write.table(clusters_res,
+# 	    "clusters_res_0.3_FLI1_manip2_combined_pat_cluster_filtered.txt",
+# 	    sep="\t", quote=F, col.names=NA)
+```
+
+- Look at PCA results again, with clusters
+```{r}
+DimPlot(FLI1_manip2_combined_pat_cluster_filtered, dims=c(1, 2), reduction = "pca", pt.size=1)
+DimPlot(FLI1_manip2_combined_pat_cluster_filtered, dims=c(3, 4), reduction = "pca", pt.size=1)
+```
+
+- UMAP
+```{r}
+setwd(OUTPUT_PATH)
+FLI1_manip2_combined_pat_cluster_filtered <- RunUMAP(FLI1_manip2_combined_pat_cluster_filtered, dims = 1:10, umap.method="uwot", seed.use=10, n.components=2, n.neighbors = 10 , spread=1, min.dist=0.1)
+DimPlot(FLI1_manip2_combined_pat_cluster_filtered, reduction = "umap", pt.size=0.7, label = TRUE)
+
+# note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+UMAP_coord <- FLI1_manip2_combined_pat_cluster_filtered@reductions$umap@cell.embeddings
+# write.table(UMAP_coord,
+# 	    "UMAP_coordinates_FLI1_manip2_combined_pat_cluster_filtered.txt",
+# 	    sep="\t", quote=F, col.names=NA
+# )
+```
+
+- UMAP Cell cycling
+```{r}
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+ 
+FLI1_manip2_combined_pat_cluster_filtered <- CellCycleScoring(FLI1_manip2_combined_pat_cluster_filtered,s.features = s.genes, g2m.features = g2m.genes)
+DimPlot(FLI1_manip2_combined_pat_cluster_filtered,group.by="Phase")+ggtitle("UMAP - Cell cycle")
+```
+
+- Top marker genes by clusters and exclude ribosomal genes
+```{r}
+setwd(OUTPUT_PATH)
+
+ribosomal_genes <- c("RPS17","RPS9","RPS9","RPS9","RPS9","RPS9","RPS9","RPS9","MRPS18B","MRPS18B","MRPS18B","RPS9","RPS18","MRPS36","RPS9","MRPS18B","RPS4Y2","RPS4Y1","RPS25","RPL7A","MRPS6","MRPS18B","RPS18","MRPS18B","RPS18","MRPL57","TBCE","RPS18","MRPS12","MRPS31","RPL3","MRPL23","RPL3L","RPS2","RPL17-C18orf32","RPS4X","RPS13","RPL36","RPS21","RPL21","RPL14","MRPS24","MRPL54","RPS24","RPS15A","RPS6","MRPS25","MRPL36","RPL36AL","MRPS17","MRPL16","MRPS30","FAU","MRPS16","RPS7","RPL23","RPS10","RPL10L","RPL35","RPL17","SRBD1","RPL22","RPL4","MRPS36","RPL37","MRPS2","RPL36A","RPL36A-HNRNPH2","RPL30","MRPL49","RPS19","RPL12","RPS5","RPS27L","RPS29","RPSA","MRPL33","MRPL1","RPS17","RPL10","MRPL13","MRPL19","MRPL15","MRPL41","RPS12","MRPS9","MRPS11","MRPL3","RPL31","RPS3","RPL38","RPL22L1","RPL39","MRPL46","RPL18A","RPL7","RPS3A","RPLP2","RPLP0","RPS16","MRPL23","MRPL22","MRPL18","RPL7L1","MRPL2","MRPS34","MRPS33","RPL28","RPL7A","MRPL4","RPL35A","RPL13","RPL24","RPS20","RPS15","MRPL14","MRPL21","MRPL32","NDUFA7","RPS28","RPL15","RPL18","RPL9","RPL37A","RPS11","MRPS23","MRPL52","MRPL43","MRPS18B","RPLP1","MRPS18A","RSL24D1","RPL27","RPL13A","MRPS14","MRPL47","MRPS35","RPL8","RPL26L1","MRPL11","RPL26","TBCE","RPS27AP5","MRPL34","MRPS12","MRPS5","MRPS18C","RPL29","RPL39L","MRPL28","MRPL51","RPL34","RPL10A","MRPL12","RPL32","RPS14","MRPL35","MRPL17","RPL11","RPS23","RPS9","RPL23A","RPS18","MRPL42","MRPL10","UBA52","DAP3","MRPS7","RPL19","RPS25","RPS26","RPL41","MRPS22","RPL6","RPS8","TBCE","MRPL30","RPS27","RPL27A","MRPS21","MRPL27","MRPL20","MRPL55","MRPL37","RPS27A","MRPL24","RPL5","MRPL9","MRPS15")
+
+all.genes <- rownames(FLI1_manip2_combined_pat_cluster_filtered)
+ribosomal_genes_filtered <- ribosomal_genes[!duplicated(ribosomal_genes)]
+all.genes_without_ribosomal = setdiff(all.genes, ribosomal_genes_filtered)
+# length(ribosomal_genes)
+# length(ribosomal_genes_filtered)
+# length(all.genes)
+# length(all.genes_without_ribosomal)
+for(i in 0:(max(as.numeric(levels(FLI1_manip2_combined_pat_cluster_filtered@meta.data$seurat_clusters))))) {
+  assign(paste("cluster", i,".markers", sep = ""), FindMarkers(FLI1_manip2_combined_pat_cluster_filtered, features = all.genes_without_ribosomal, ident.1 = i, test.use = "bimod", only.pos = TRUE))
+    print(paste("cluster", i,".markers", sep = ""))
+    print(head(get(paste("cluster", i,".markers", sep = "")),n=50))
+#     write.table(get(paste("cluster", i,".markers", sep = "")),
+# 		paste("cluster", i,"markers_FLI1_manip2_combined_pat_cluster_filtered.txt", sep = "_"),
+# 		quote=FALSE,row.names = TRUE)
+}
+```
+
+- Dimensional reduction plot, with cells colored by a quantitative feature
+```{r echo=FALSE}
+# gene_list <- c("CRHBP","EMCN","HLF","AVP","SPINK2","CSF3R","GLIPR1","MIAT","IGHM","ITGA2B", "CD34","ELANE","AZU1","SERPINB10","MPO", "PRTN3", "CSF1R", "KLF1","TFR2","MPIG6B","GP9", "PF4", "SELP", "VWF","KIT")
+
+gene_list <- c("THY1","PROM1","FLT3","CRHBP","HOPX","AVP","KIT","SPINK2","IGHM","GLIPR1","CSF3R","CPA3","CLC","PRG2","TPSAB1","RHEX","ALOX5AP","MS4A2","CD9","LMNA","CAVIN2","LAT","VWA5A","ITGA2B","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44","MPO","ELANE","PRTN3","AZU1","SERPINB10","CTSG","CSTA","RNASE3","CD38","TFRC","DEPTOR","KLF1","ACSM3","APOC1","TFR1","ANK1","TMSB10","ALDH1A1","MT-ATP8","H2AY","GYPB","CED","TFR2","HBB","APOC1","ANK1","ACSM3","BLVRB","CD9","STOM","LAT","PLEK","GP9","GP6","GP1BA","PF4","RASGRP2","MPIG6B","VWF","PPBP","LTBP1","SH3BP5","SELP","TMEM40","P2YR1","MYH10","MYH9","SLFN14","CD74","VIM","RNASE2","CSF2R","TUBB1","RAB27B","HPSE","FSCN1")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.6))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+
+```
+
+### Celltype signature (Supervised Method)
+
+
+- Plot HSPC signature using 5 best candidate genes
+```{r}
+# list("THY1","PROM1","FLT3","CRHBP","HOPX","AVP","KIT","SPINK2","CSF3R","AVP","IGHM","GIPR")
+tryCatch({
+  FLI1_manip2_combined_pat_cluster_filtered <- AddModuleScore(FLI1_manip2_combined_pat_cluster_filtered, features = list("AVP","PROM1","CRHBP","FLT3","HOPX","IGHM","GLIPR1"),
+name = "HSPC")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+
+FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = "HSPC1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for HSPC signature
+```{r}
+gene_list <- c("AVP","PROM1","CRHBP","FLT3","HOPX","IGHM","GLIPR1")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot CMP signature using 5 best candidate genes
+```{r}
+# list("CSF3R","CPA3","CLC","PRG2","TPSAB1","RHEX","ALOX5AP","MS4A2")
+tryCatch({
+  FLI1_manip2_combined_pat_cluster_filtered <- AddModuleScore(FLI1_manip2_combined_pat_cluster_filtered, features = list("CPA3","PRG2","RHEX","ALOX5AP","MS4A2"),
+name = "CMP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = "CMP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for CMP signature
+```{r}
+gene_list <- c("CPA3","PRG2","RHEX","ALOX5AP","MS4A2")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot CMP-MK-primed signature using 5 best candidate genes
+```{r}
+# list("CD9","LMNA", "CAVIN2","LAT","VWA5A","ITGA2B","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44")
+# list("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44","ITGA2B")
+tryCatch({
+  FLI1_manip2_combined_pat_cluster_filtered <- AddModuleScore(FLI1_manip2_combined_pat_cluster_filtered, features = list("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44"),
+name = "CMP_MK_primed")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = "CMP_MK_primed1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for CMP-MK-primed signature
+```{r}
+gene_list <- c("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot CMP-non-primed signature using 5 best candidate genes
+```{r}
+tryCatch({
+  FLI1_manip2_combined_pat_cluster_filtered <- AddModuleScore(FLI1_manip2_combined_pat_cluster_filtered, features = list("MS4A3","RNASE2","CLC","CSF2RB","EPX","CTSG"),
+name = "CMP_non_primed")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = "CMP_non_primed1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for CMP-non-primed signature
+```{r}
+gene_list <- c("MS4A3","RNASE2","CLC","CSF2RB","EPX","CTSG")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot GMP signature using 5 best candidate genes
+```{r}
+# list("MPO","ELANE","PRTN3","AZU1","SERPINB10", "CTSG","CSTA","RNASE3")
+# list("CSTA","MPO","ELANE","PRTN3","AZU1","IFT122","RNASE3")
+# CED not present in genes dataset
+tryCatch({
+FLI1_manip2_combined_pat_cluster_filtered <- AddModuleScore(FLI1_manip2_combined_pat_cluster_filtered, features = list("CSTA","MPO","ELANE","PRTN3","AZU1","RNASE3"),
+name = "GMP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = "GMP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for GMP signature
+```{r}
+gene_list <- c("CSTA","MPO","ELANE","PRTN3","AZU1","RNASE3")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MEP signature using 5 best candidate genes
+```{r}
+# list("CD38","TFRC","DEPTOR","KLF1","ACSM3","APOC1","ANK1","TMSB10","ALDH1A1","GYPB")
+# list("CD38","KLF1","DEPTOR","ACSM3","APOC1","TFRC","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB", "H2AY")
+# list("KLRG1","IER2","KBTBD8","GASK1B","MINAR1","RAPH1","ZNF449","TNMD","TMEM98","MED17","PREX2","PER3","CELSR1","PIAS2","EMC2","KCNN4","ICAM5","DNASE2","AL021546,1","MRPL18","EXOC2","CNOT6","MSH3")
+# list("CD38","KLF1","DEPTOR","ACSM3","APOC1","TFRC","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB")
+
+# H2AY =  MACROH2A1(not present) and TFR1 = TFRC
+tryCatch({
+FLI1_manip2_combined_pat_cluster_filtered <- AddModuleScore(FLI1_manip2_combined_pat_cluster_filtered, features = list("CD38","KLF1","DEPTOR","ACSM3","APOC1","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB","TFRC"),name = "MEP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = "MEP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MEP signature
+```{r}
+gene_list <- c("CD38","KLF1","DEPTOR","ACSM3","APOC1","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB","TFRC")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MEP-ERP signature using 5 best candidate genes
+```{r}
+# list("TFR2","HBB","APOC1","ANK1","ACSM3","BLVRB")
+# list("BLVRB","HBB","APOC1","TFR2")
+# list("KLF1","AHSPP","RHAG")
+# list("KLF1","AHSPP","RHAG", "APOC1","TFR2")
+# list("KLF1","RHAG", "APOC1","TFR2")
+
+tryCatch({
+FLI1_manip2_combined_pat_cluster_filtered <- AddModuleScore(FLI1_manip2_combined_pat_cluster_filtered, features = list("HBB","BLVRB","APOC1","TFR2"),name = "MEP_ERP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = "MEP_ERP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MEP-ERP signature
+```{r}
+gene_list <- c("HBB","BLVRB","APOC1","TFR2")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MEP-MKP signature using 5 best candidate genes
+```{r}
+# list("CD9","STOM","LAT","PLEK","ITGA2B")
+# list("C3orf58","PDIA5","RGS18","PDGFA","PLEK","ARHGAP6")
+tryCatch({
+FLI1_manip2_combined_pat_cluster_filtered <- AddModuleScore(FLI1_manip2_combined_pat_cluster_filtered, features = list("PDIA5","RGS18","PDGFA","PLEK","ARHGAP6") ,name = "MEP_MKP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = "MEP_MKP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MEP-MkP signature
+```{r}
+gene_list <- c("PDIA5","RGS18","PDGFA","PLEK","ARHGAP6")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MKP_MK signature using 5 best candidate genes
+```{r}
+# list("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40","GP6","GP1BA","RASGRP2")
+# list("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40")
+# list("PF4","GP6","VWF","TRPC6","ITGB3","FCER1G","SELP")
+tryCatch({
+FLI1_manip2_combined_pat_cluster_filtered <- AddModuleScore(FLI1_manip2_combined_pat_cluster_filtered, features = list("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40"),
+name = "MKP_MK")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = "MKP_MK1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MkP_Mk signature
+```{r}
+gene_list <- c("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MoMacro signature using 5 best candidate genes
+```{r}
+tryCatch({
+FLI1_manip2_combined_pat_cluster_filtered <- AddModuleScore(FLI1_manip2_combined_pat_cluster_filtered, features = list("MERTK","SPP1","S100A8","S100A9","LILRB2","ITGAM","CD14","CD68","FCN1","VCAN"),
+name = "MoMacro")
+
+FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = "MoMacro1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+}, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+```
+
+- Looking individual gene expression for MoMacro signature
+```{r}
+gene_list <- c("MERTK","SPP1","S100A8","S100A9","LILRB2","ITGAM","CD14","CD68","FCN1","VCAN","TLR4")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_pat_cluster_filtered, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Look genes representative about a signature differenciation (supervised method)
+```{r,fig.width=15,fig.height=5}
+
+signature = list(HSPC = c("AVP","PROM1","CRHBP","FLT3","HOPX","IGHM","SPINK2","CSF3R"), #"GLIPR1"
+                 CMP = c("CPA3","PRG2","RHEX","ALOX5AP","MS4A2","CLC","RNASE2","CSF2RB","CTSG"),
+                 #primedCMP = c("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44"),
+                 #NoprCMP = c("MS4A3","RNASE2","CLC","CSF2RB","EPX","CTSG"),
+                 GMP =  c("MPO","ELANE","PRTN3","AZU1","RNASE3"), #"CSTA"
+                 MP_M = c("CTSH","LYZ","SAMHD1","S100A8","S100A9","IGSF6","ITGAM","CD14","CD68","FCN1"),
+                 MEP = c("CD38","KLF1","ALDH1A1","BLVRB","HBB","GYPB","MYH10","FSCN1"), #"MT-ATP8","DEPTOR","ACSM3","TMSB10","TFRC","APOC1","ANK1"
+                 #ERP = c("HBB","BLVRB","APOC1","TFR2"),
+                 MKP_MK = c("VWA5A","CAVIN2","LMNA","LAT","CD9","ITGA2B","MPIG6B","PF4","GP9","GP6","GP1BA","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40","TUBB1","RAB27B","HPSE"))
+
+
+
+FLI1_manip2_combined_pat_cluster_filtered_copy <- FLI1_manip2_combined_pat_cluster_filtered
+# Define an order of cluster identities
+my_levels <- c(1,2,0)
+Idents(FLI1_manip2_combined_pat_cluster_filtered_copy) <- factor(Idents(FLI1_manip2_combined_pat_cluster_filtered_copy), levels= my_levels)
+
+# clean les gènes en doublons par type cellulaires
+un <- unlist(signature)
+res <- Map(`[`, signature, relist(!duplicated(un), skeleton = signature))
+
+
+dp <- DotPlot(FLI1_manip2_combined_pat_cluster_filtered_copy, features = res, dot.scale = 6) + theme(axis.text.x = element_text(size = 10), text = element_text(size = 14),legend.title = element_text(size=14),legend.text = element_text(size=15)) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +  scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() 
+dp
+```
+
+### Celltype signature (Unsupervised Method)
+
+- Top DE gene expression by cluster: Table
+
+Checking most differentially expressed gene with FindAllMarkers in each clusters compared to all others.
+```{r , echo=FALSE, message=FALSE, warning=FALSE}
+# FindAllMarkers
+Idents(FLI1_manip2_combined_pat_cluster_filtered) <- "RNA_snn_res.0.3"
+markers <- FindAllMarkers(FLI1_manip2_combined_pat_cluster_filtered, features = all.genes_without_ribosomal,only.pos = T, test.use = "bimod", min.pct = 0.1, logfc.threshold = 0.2)
+
+# Table
+top5_genes <- markers %>% group_by(cluster) %>% top_n(5, avg_log2FC)
+top20_genes <- markers %>% group_by(cluster) %>% top_n(20, avg_log2FC)
+
+datatable(markers, filter = 'top', options = list(pageLength = 20)) %>% formatRound(2:4, 2) %>% formatSignif(c(1,5), digits = 2)
+```
+
+### Summary Plot
+
+- Celltype attribution
+```{r}
+for (i in 1:length(rownames(FLI1_manip2_combined_pat_cluster_filtered@meta.data))){
+  
+  if(FLI1_manip2_combined_pat_cluster_filtered@meta.data$seurat_clusters[i] %in% c(0,2)){
+    FLI1_manip2_combined_pat_cluster_filtered@meta.data$celltype_subset[i] <- "CMP"
+  }
+  if(FLI1_manip2_combined_pat_cluster_filtered@meta.data$seurat_clusters[i] %in% c(1)){
+    FLI1_manip2_combined_pat_cluster_filtered@meta.data$celltype_subset[i] <- "GMP"
+  }
+
+}
+
+table(FLI1_manip2_combined_pat_cluster_filtered@meta.data$celltype_subset)
+my_levels <- c("MEP","CMP","HSPC")
+DimPlot(FLI1_manip2_combined_pat_cluster_filtered, reduction = 'umap', group.by = "celltype_subset", pt.size = 0.2, label = T, order = my_levels) + ggtitle("UMAP with Celtypes")
+```
+
+- Celltype attribution in global UMAP
+```{r,fig.width=10,fig.height=4}
+test <- FLI1_manip2_combined_pat_cluster_filtered@meta.data[,c("barcode","celltype_subset")]
+test2 <- FLI1_manip2_combined_filtered@meta.data
+test3 <- left_join(test2, test)
+rownames(test3) <- rownames(test2)
+FLI1_manip2_combined_filtered@meta.data <- test3
+test3$celltype_temp <- paste(test3$celltype, test3$celltype_subset, sep ="-")
+for (i in 1:length(rownames(test3))){
+  if(is.na(test3$celltype_subset[i])){
+    test3$celltype_final[i] <- strsplit(test3$celltype_temp,split ="-")[[i]][1]
+  }
+  else{
+    test3$celltype_final[i] <- strsplit(test3$celltype_temp,split ="-")[[i]][2]
+  }
+}
+table(test3$celltype_final)
+FLI1_manip2_combined_filtered@meta.data <- test3
+
+
+my_levels <- c("MkP_Mk","MEP","MkprimedCMP","CMP","GMP","HSPC")
+DimPlot(FLI1_manip2_combined_filtered, group.by = "celltype_final",reduction = 'umap', pt.size = 0.5, label = T, order = my_levels, label.size = 3) + ggtitle("UMAP patient with Celltypes") + theme(text = element_text(size = 10))
+
+```
+
+- Saving Seurat object for cluster 19 subset 
+```{r}
+setwd(OUTPUT_PATH)
+saveRDS(FLI1_manip2_combined_pat_cluster_filtered, file="17_11_22_FLI1_manip2_pat_cluster8_filtered_cell_cycle_regress_seurat_done.rds")
+saveRDS(FLI1_manip2_combined_filtered, file="17_11_22_FLI1_manip2_pat_filtered_cell_cycle_regress_seurat_done_with_celltypes.rds")
+```
+
+```{r}
+setwd(paste(OUTPUT_PATH, "Patient",sep="/"))
+FLI1_manip2_combined_filtered <- readRDS("17_11_22_FLI1_manip2_pat_filtered_cell_cycle_regress_seurat_done_with_celltypes.rds")
+```
+
+#
+
+
+
+
+
+

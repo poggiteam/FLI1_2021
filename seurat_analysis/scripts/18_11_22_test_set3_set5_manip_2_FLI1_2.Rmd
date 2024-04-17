@@ -1,0 +1,2582 @@
+---
+title: "FLI1 patient manip 2 merge analysis"
+author: "Laurent H"
+date: "05/2023"
+always_allow_html: yes
+output: 
+  rmarkdown::html_document:
+    code_folding: hide
+    theme: cerulean
+    toc: true
+toc_float:
+  toc_collapsed: true
+pdf_document:
+  toc: true
+editor_options: 
+  chunk_output_type: console
+---
+
+---
+title:  "Seurat merging on FLI1 D5 and D11"
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+knitr::opts_knit$set(root.dir ="/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/RDS/Analysis_done")
+```
+
+## FLI1 merge analysis {.tabset .tabset-fade}
+
+### Global analysis
+
+- Loading Libraries 
+```{r, include=FALSE}
+
+# Load packages, data and functions
+
+library(sctransform)
+library(reticulate)
+library(scigenex)
+
+# Load all necessary packages
+library(Seurat)
+library(htmlwidgets)
+library(DT)
+library(plotly)
+# library(DDRTree)
+library(pheatmap)
+library(reshape2)
+library("gridExtra")
+library(knitr)
+library(scater)
+# install.packages("amap")
+# library(amap)
+#library(kableExtra)
+#library(monocle)
+#library(scran)
+library(dplyr)
+library(ggrepel)
+library(fmsb)
+library(viridis)
+```
+
+```{r env_loading, include=FALSE}
+#  Path to the folder that will contain output objects
+
+OUTPUT_PATH <- "/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/RDS/Regress"
+OUTPUT_PATH_DONE <- "/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/RDS/Analysis_done"
+OUTPUT_PATH_DEGS <- "/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/DEGs/INPUT_seurat"
+OUTPUT_PATH_Radarplot <- "/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/RadarPlot"
+
+# Set the random number seed
+set.seed(1234)
+```
+
+```{r}
+FLI1_ctrl <- readRDS(paste(OUTPUT_PATH_DONE,"/Control/17_11_22_FLI1_manip2_ctrl_filtered_cell_cycle_regress_seurat_done_with_celltypes.rds", sep = "/"))
+FLI1_pat <- readRDS(paste(OUTPUT_PATH_DONE,"/Patient/17_11_22_FLI1_manip2_pat_filtered_cell_cycle_regress_seurat_done_with_celltypes.rds", sep= "/"))
+```
+
+- Merge 2 datasets (ctrl & pat)
+```{r}
+
+FLI1_manip2_combined <- merge(FLI1_ctrl, y = FLI1_pat, add.cell.ids = c("ctrl", "pat"), project = "FLI1")
+FLI1_manip2_combined@meta.data <- FLI1_manip2_combined@meta.data[,-c(20:21)]
+table(FLI1_manip2_combined$HTO_souporcell_classification)
+```
+
+- Some quality controls: Count = reads; Features = genes
+```{r}
+Idents(FLI1_manip2_combined) <- FLI1_manip2_combined$HTO_souporcell_classification
+hist(FLI1_manip2_combined@meta.data$nCount_RNA)
+hist(FLI1_manip2_combined@meta.data$nFeature_RNA)
+```
+
+- Percentage of mitochondrial genes
+```{r}
+mito.genes <- grep("MT-", rownames(FLI1_manip2_combined@assays$RNA), value=T)
+mito.genes
+# The [[ operator can add columns to object metadata. This is a great place to stash QC stats
+FLI1_manip2_combined[["percent.mt"]] <- PercentageFeatureSet(FLI1_manip2_combined, pattern = "MT-")
+
+#Modif LJO : Compute mitochondrial percentage threshold
+discard.mito=isOutlier(FLI1_manip2_combined[["percent.mt"]][,1],type="higher")
+mito.threshold=min(FLI1_manip2_combined[["percent.mt"]][,1][discard.mito])
+
+# Visualize QC metrics as a violin plot
+VlnPlot(FLI1_manip2_combined, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3,pt.size=0)
+```
+
+- Ploting nFeature_RNA and mitochondrial percent against nCount_RNA
+```{r}
+plot1 <- FeatureScatter(FLI1_manip2_combined, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", pt.size = 0.5)
+plot2 <- FeatureScatter(FLI1_manip2_combined, feature1 = "nCount_RNA", feature2 = "percent.mt", pt.size = 0.5)
+plot1
+plot2
+```
+
+- Normalize data
+```{r}
+setwd(OUTPUT_PATH)
+
+# standard log-normalization
+FLI1_manip2_combined <- NormalizeData(FLI1_manip2_combined, normalization.method = "LogNormalize", scale.factor = 10000)
+
+# write.table(FLI1_manip2_combined@assays$RNA@data,"log_norm_filtered_FLI1_combined_set3_set5.txt",
+# 	    sep="\t", quote=F, col.names=NA)
+```
+
+- Some counts after normalization
+```{r}
+FLI1_manip2_combined
+table(FLI1_manip2_combined$HTO_souporcell_classification)
+```
+
+- Choose top 1k variable genes
+```{r}
+FLI1_manip2_combined <- FindVariableFeatures(object=FLI1_manip2_combined, selection.method = "vst", mean.function = ExpMean, dispersion.function = LogVMR, binning.method = "equal_width", num.bin = 20, y.cutoff = 0.5, nfeatures = 1000, verbose=TRUE)
+#write.table(icare@assays$RNA@var.features,
+#	     paste("Top1000_variable_genes.",experiment,"_",params$sample,".txt", sep=""),
+#	     sep="\t", quote=F, col.names=NA
+#)
+
+top40 <- head(VariableFeatures(FLI1_manip2_combined), 40)
+top100 <- head(VariableFeatures(FLI1_manip2_combined), 100)
+```
+
+- Plot variable genes:
+```{r Plot variable genes}
+plot1 <- VariableFeaturePlot(FLI1_manip2_combined)
+LabelPoints(plot = plot1, points = top100, repel = TRUE)
+```
+
+- Assign Cell-Cycle Scores
+```{r}
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+FLI1_manip2_combined <- CellCycleScoring(FLI1_manip2_combined, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+
+# view cell cycle scores and phase assignments
+head(FLI1_manip2_combined[[]])
+```
+
+- Regress out cell cycle scores during data scaling
+```{r}
+# FLI1_manip2_combined <- ScaleData(FLI1_manip2_combined,  vars.to.regress = c("S.Score", "G2M.Score"), features = rownames(FLI1_manip2_combined), display.progress = TRUE)
+setwd(OUTPUT_PATH)
+# saveRDS(FLI1_manip2_combined,file = "18_11_22_FLI1_manip2_combined_regress_no_analysis.rds")
+FLI1_manip2_combined_regress <- readRDS(paste(OUTPUT_PATH,"18_11_22_FLI1_manip2_combined_regress_no_analysis.rds",sep="/"))
+```
+
+- Running a PCA on cell cycle genes after correction
+```{r}
+FLI1_manip2_combined_regress <- RunPCA(FLI1_manip2_combined_regress, features = VariableFeatures(object = FLI1_manip2_combined_regress), npcs=40, pcs.print = 5, seed.use=42, rev.pca = FALSE)
+DimPlot(FLI1_manip2_combined_regress,group.by="Phase", reduction = "pca")+ggtitle("PCA - Cell cycle")
+DimPlot(FLI1_manip2_combined_regress, group.by = "HTO_souporcell_classification", reduction = "pca")
+```
+
+- JackStraw and ElbowPlot:
+```{r}
+FLI1_manip2_combined_regress <- JackStraw(FLI1_manip2_combined_regress, num.replicate = 100)
+FLI1_manip2_combined_regress <- ScoreJackStraw(FLI1_manip2_combined_regress, dims = 1:20)
+           
+JackStrawPlot(FLI1_manip2_combined_regress, dims = 1:15)
+           
+ElbowPlot(FLI1_manip2_combined_regress)
+```
+
+- Perform clustering: 
+```{r}
+setwd(OUTPUT_PATH)
+FLI1_manip2_combined_regress <- FindNeighbors(object = FLI1_manip2_combined_regress, k.param = 12, dims = 1:8, compute.SNN = TRUE, prune.SNN = 1/15)
+
+FLI1_manip2_combined_regress <- FindClusters(object= FLI1_manip2_combined_regress, modularity.fxn = 1,
+             resolution = 0.4, algorithm = 1, n.start = 10, n.iter = 10,
+             random.seed = 42, temp.file.location = NULL, edge.file.name = NULL,
+             verbose = TRUE)
+clusters_res <- FLI1_manip2_combined_regress[["RNA_snn_res.0.4"]][,1]
+names(clusters_res)=colnames(FLI1_manip2_combined_regress)
+
+# write.table(clusters_res,
+# 	    "clusters_res_0.8_FLI1_manip2_combined_regress.txt",
+# 	    sep="\t", quote=F, col.names=NA)
+```
+
+- Look at PCA results again, with clusters
+```{r}
+DimPlot(FLI1_manip2_combined_regress, dims=c(1, 2), reduction = "pca", pt.size=1)
+DimPlot(FLI1_manip2_combined_regress, dims=c(3, 4), reduction = "pca", pt.size=1)
+```
+
+- UMAP 
+```{r}
+setwd(OUTPUT_PATH)
+FLI1_manip2_combined_regress <- RunUMAP(FLI1_manip2_combined_regress, dims = 1:10, umap.method="uwot", seed.use=10, n.components=2, n.neighbors = 10 , spread=1, min.dist=0.1)
+DimPlot(FLI1_manip2_combined_regress, reduction = "umap", pt.size=0.7, label = TRUE)
+
+# note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+UMAP_coord <- FLI1_manip2_combined_regress@reductions$umap@cell.embeddings
+# write.table(UMAP_coord,
+# 	    "UMAP_coordinates_FLI1_manip2_combined_regress.txt",
+# 	    sep="\t", quote=F, col.names=NA
+# )
+```
+
+- UMAP Cell cycling
+```{r}
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+ 
+FLI1_manip2_combined_regress <- CellCycleScoring(FLI1_manip2_combined_regress,s.features = s.genes, g2m.features = g2m.genes)
+DimPlot(FLI1_manip2_combined_regress,group.by="Phase")+ggtitle("UMAP - Cell cycle")
+```
+
+- tSNE: 
+```{r}
+FLI1_manip2_combined_regress <- RunTSNE(object= FLI1_manip2_combined_regress,  dims = 1:10, dim.embed = 2, seed.use = 42, tsne.method="Rtsne", reduction="pca")
+DimPlot(FLI1_manip2_combined_regress, reduction = "tsne", pt.size=0.7, label = TRUE)
+tSNE_coord <- FLI1_manip2_combined_regress@reductions$tsne@cell.embeddings
+# write.table(tSNE_coord,
+# 	    "tSNE_coordinates_FLI1_manip2_combined_regress.txt",
+# 	    sep="\t", quote=F, col.names=NA
+# )
+```
+
+- Top 50 marker genes by clusters and exclude ribosomal genes
+```{r}
+setwd(OUTPUT_PATH)
+
+ribosomal_genes <- c("RPS17","RPS9","MRPS18B","RPS18","MRPS36","MRPS18B","RPS4Y2","RPS4Y1","RPS25","RPL7A","MRPS6","MRPS18B","RPS18","MRPS18B","RPS18","MRPL57","TBCE","RPS18","MRPS12","MRPS31","RPL3","MRPL23","RPL3L","RPS2","RPL17-C18orf32","RPS4X","RPS13","RPL36","RPS21","RPL21","RPL14","MRPS24","MRPL54","RPS24","RPS15A","RPS6","MRPS25","MRPL36","RPL36AL","MRPS17","MRPL16","MRPS30","FAU","MRPS16","RPS7","RPL23","RPS10","RPL10L","RPL35","RPL17","SRBD1","RPL22","RPL4","MRPS36","RPL37","MRPS2","RPL36A","RPL36A-HNRNPH2","RPL30","MRPL49","RPS19","RPL12","RPS5","RPS27L","RPS29","RPSA","MRPL33","MRPL1","RPS17","RPL10","MRPL13","MRPL19","MRPL15","MRPL41","RPS12","MRPS9","MRPS11","MRPL3","RPL31","RPS3","RPL38","RPL22L1","RPL39","MRPL46","RPL18A","RPL7","RPS3A","RPLP2","RPLP0","RPS16","MRPL23","MRPL22","MRPL18","RPL7L1","MRPL2","MRPS34","MRPS33","RPL28","RPL7A","MRPL4","RPL35A","RPL13","RPL24","RPS20","RPS15","MRPL14","MRPL21","MRPL32","NDUFA7","RPS28","RPL15","RPL18","RPL9","RPL37A","RPS11","MRPS23","MRPL52","MRPL43","MRPS18B","RPLP1","MRPS18A","RSL24D1","RPL27","RPL13A","MRPS14","MRPL47","MRPS35","RPL8","RPL26L1","MRPL11","RPL26","TBCE","RPS27AP5","MRPL34","MRPS12","MRPS5","MRPS18C","RPL29","RPL39L","MRPL28","MRPL51","RPL34","RPL10A","MRPL12","RPL32","RPS14","MRPL35","MRPL17","RPL11","RPS23","RPS9","RPL23A","RPS18","MRPL42","MRPL10","UBA52","DAP3","MRPS7","RPL19","RPS26","RPL41","MRPS22","RPL6","RPS8","TBCE","MRPL30","RPS27","RPL27A","MRPS21","MRPL27","MRPL20","MRPL55","MRPL37","RPS27A","MRPL24","RPL5","MRPL9","MRPS15")
+
+all.genes <- rownames(FLI1_manip2_combined_regress)
+ribosomal_genes_filtered <- ribosomal_genes[!duplicated(ribosomal_genes)]
+all.genes_without_ribosomal = setdiff(all.genes, ribosomal_genes_filtered)
+# length(ribosomal_genes)
+# length(ribosomal_genes_filtered)
+# length(all.genes)
+# length(all.genes_without_ribosomal)
+for(i in 0:(max(as.numeric(levels(FLI1_manip2_combined_regress@meta.data$seurat_clusters))))) {
+  assign(paste("cluster", i,".markers", sep = ""), FindMarkers(FLI1_manip2_combined_regress, features = all.genes_without_ribosomal, ident.1 = i, test.use = "bimod", only.pos = TRUE))
+    print(paste("cluster", i,".markers", sep = ""))
+    print(head(get(paste("cluster", i,".markers", sep = "")),n=50))
+#     write.table(get(paste("cluster", i,".markers", sep = "")),
+# 		paste("cluster", i,"markers_FLI1_manip2_combined_regress.txt", sep = "_"),
+# 		quote=FALSE,row.names = TRUE)
+}
+```
+
+- FeaturePlot 
+Dimensional reduction plot, with cells colored by a quantitative feature
+```{r echo=FALSE}
+# gene_list <- c("CRHBP","EMCN","HLF","AVP","SPINK2","CSF3R","GLIPR1","MIAT","IGHM","ITGA2B", "CD34","ELANE","AZU1","SERPINB10","MPO", "PRTN3", "CSF1R", "KLF1","TFR2","MPIG6B","GP9", "PF4", "SELP", "VWF","KIT")
+
+gene_list <- c("THY1","PROM1","FLT3","CRHBP","HOPX","AVP","KIT","SPINK2","IGHM","GLIPR1","CSF3R","CPA3","CLC","PRG2","TPSAB1","RHEX","ALOX5AP","MS4A2","CD9","LMNA","CAVIN2","LAT","VWA5A","ITGA2B","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44","MPO","ELANE","PRTN3","AZU1","SERPINB10","CTSG","CSTA","RNASE3","CD38","TFRC","DEPTOR","KLF1","ACSM3","APOC1","TFR1","ANK1","TMSB10","ALDH1A1","MT-ATP8","H2AY","GYPB","CED","TFR2","HBB","APOC1","ANK1","ACSM3","BLVRB","CD9","STOM","LAT","PLEK","GP9","GP6","GP1BA","PF4","RASGRP2","MPIG6B","VWF","PPBP","LTBP1","SH3BP5","SELP","TMEM40","P2YR1","MYH10","MYH9","SLFN14","CD74","VIM","RNASE2","CSF2R","TUBB1","RAB27B","HPSE","FSCN1","CREB3","SLC9A3R1","CAP1","RAB27B","HPSE","FSCN1","RGS18","RAB38","MRP4","VMAT2","ARPC2","CREB3","SLC9A3R1","FLI1","TLN1")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_regress, features =gene_list[i], reduction = "umap", cols = c("grey", "light blue","cyan3","cyan4","dodgerblue3","blue","mediumslateblue","purple","orchid3","red","brown","black"), pt.size = 0.6))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+
+```
+
+### Celltype signature (Supervised Method)
+
+- Plot HSPC signature using 5 best candidate genes
+```{r}
+# list("THY1","PROM1","FLT3","CRHBP","HOPX","AVP","KIT","SPINK2","CSF3R","AVP","IGHM","GIPR")
+tryCatch({
+  FLI1_manip2_combined_regress <- AddModuleScore(FLI1_manip2_combined_regress, features = list(c("AVP","PROM1","CRHBP","FLT3","HOPX","IGHM","GLIPR1")),
+name = "HSPC")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+
+FeaturePlot(object = FLI1_manip2_combined_regress, features = "HSPC1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for HSPC signature
+```{r}
+gene_list <- c("AVP","PROM1","CRHBP","FLT3","HOPX","IGHM","GLIPR1")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_regress, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot CMP signature using 5 best candidate genes
+```{r}
+# list("CSF3R","CPA3","CLC","PRG2","TPSAB1","RHEX","ALOX5AP","MS4A2")
+tryCatch({
+  FLI1_manip2_combined_regress <- AddModuleScore(FLI1_manip2_combined_regress, features = list(c("CPA3","PRG2","RHEX","ALOX5AP","MS4A2")),
+name = "CMP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_regress, features = "CMP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for CMP signature
+```{r}
+gene_list <- c("CPA3","PRG2","RHEX","ALOX5AP","MS4A2")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_regress, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot CMP-MK-primed signature using 5 best candidate genes
+```{r}
+# list("CD9","LMNA", "CAVIN2","LAT","VWA5A","ITGA2B","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44")
+# list("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44","ITGA2B")
+tryCatch({
+  FLI1_manip2_combined_regress <- AddModuleScore(FLI1_manip2_combined_regress, features = list(c("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44")),
+name = "CMP_MK_primed")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_regress, features = "CMP_MK_primed1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for CMP-MK-primed signature
+```{r}
+gene_list <- c("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_regress, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot CMP-non-primed signature using 5 best candidate genes
+```{r}
+tryCatch({
+  FLI1_manip2_combined_regress <- AddModuleScore(FLI1_manip2_combined_regress, features = list(c("MS4A3","RNASE2","CLC","CSF2RB","EPX","CTSG")),
+name = "CMP_non_primed")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_regress, features = "CMP_non_primed1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for CMP-non-primed signature
+```{r}
+gene_list <- c("MS4A3","RNASE2","CLC","CSF2RB","EPX","CTSG")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_regress, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot GMP signature using 5 best candidate genes
+```{r}
+# list("MPO","ELANE","PRTN3","AZU1","SERPINB10", "CTSG","CSTA","RNASE3")
+# list("CSTA","MPO","ELANE","PRTN3","AZU1","IFT122","RNASE3")
+# CED not present in genes dataset
+tryCatch({
+FLI1_manip2_combined_regress <- AddModuleScore(FLI1_manip2_combined_regress, features = list(c("CSTA","MPO","ELANE","PRTN3","AZU1","RNASE3")),
+name = "GMP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_regress, features = "GMP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for GMP signature
+```{r}
+gene_list <- c("CSTA","MPO","ELANE","PRTN3","AZU1","RNASE3")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_regress, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MEP signature using 5 best candidate genes
+```{r}
+# list("CD38","TFRC","DEPTOR","KLF1","ACSM3","APOC1","ANK1","TMSB10","ALDH1A1","GYPB")
+# list("CD38","KLF1","DEPTOR","ACSM3","APOC1","TFRC","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB", "H2AY")
+# list("KLRG1","IER2","KBTBD8","GASK1B","MINAR1","RAPH1","ZNF449","TNMD","TMEM98","MED17","PREX2","PER3","CELSR1","PIAS2","EMC2","KCNN4","ICAM5","DNASE2","AL021546,1","MRPL18","EXOC2","CNOT6","MSH3")
+# list("CD38","KLF1","DEPTOR","ACSM3","APOC1","TFRC","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB")
+
+# H2AY =  MACROH2A1(not present) and TFR1 = TFRC
+tryCatch({
+FLI1_manip2_combined_regress <- AddModuleScore(FLI1_manip2_combined_regress, features = list(c("CD38","KLF1","DEPTOR","ACSM3","APOC1","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB","TFRC")),name = "MEP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_regress, features = "MEP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MEP signature
+```{r}
+gene_list <- c("CD38","KLF1","DEPTOR","ACSM3","APOC1","ANK1","TMSB10","ALDH1A1","MT-ATP8","GYPB","TFRC")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_regress, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MEP-ERP signature using 5 best candidate genes
+```{r}
+# list("TFR2","HBB","APOC1","ANK1","ACSM3","BLVRB")
+# list("BLVRB","HBB","APOC1","TFR2")
+# list("KLF1","AHSPP","RHAG")
+# list("KLF1","AHSPP","RHAG", "APOC1","TFR2")
+# list("KLF1","RHAG", "APOC1","TFR2")
+
+tryCatch({
+FLI1_manip2_combined_regress <- AddModuleScore(FLI1_manip2_combined_regress, features = list(c("HBB","BLVRB","APOC1","TFR2")),name = "MEP_ERP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_regress, features = "MEP_ERP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MEP-ERP signature
+```{r}
+gene_list <- c("HBB","BLVRB","APOC1","TFR2")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_regress, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MEP-MKP signature using 5 best candidate genes
+```{r}
+# list("CD9","STOM","LAT","PLEK","ITGA2B")
+# list("C3orf58","PDIA5","RGS18","PDGFA","PLEK","ARHGAP6")
+tryCatch({
+FLI1_manip2_combined_regress <- AddModuleScore(FLI1_manip2_combined_regress, features = list(c("PDIA5","RGS18","PDGFA","PLEK","ARHGAP6")) ,name = "MEP_MKP")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_regress, features = "MEP_MKP1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MEP-MkP signature
+```{r}
+gene_list <- c("PDIA5","RGS18","PDGFA","PLEK","ARHGAP6")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_regress, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MKP_MK signature using 5 best candidate genes
+```{r}
+# list("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40","GP6","GP1BA","RASGRP2")
+# list("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40")
+# list("PF4","GP6","VWF","TRPC6","ITGB3","FCER1G","SELP")
+tryCatch({
+FLI1_manip2_combined_regress <- AddModuleScore(FLI1_manip2_combined_regress, features = list(c("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40")),
+name = "MKP_MK")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+FeaturePlot(object = FLI1_manip2_combined_regress, features = "MKP_MK1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+```
+
+- Looking individual gene expression for MkP_Mk signature
+```{r}
+gene_list <- c("MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_regress, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- Plot MoMacro signature using 5 best candidate genes
+```{r}
+tryCatch({
+FLI1_manip2_combined_regress <- AddModuleScore(FLI1_manip2_combined_regress, features = list(c("MERTK","SPP1","S100A8","S100A9","LILRB2","ITGAM","CD14","CD68","FCN1","VCAN")),
+name = "MoMacro")
+
+FeaturePlot(object = FLI1_manip2_combined_regress, features = "MoMacro1" ,reduction = "umap", order = TRUE,
+pt.size = 0.6)
+}, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+```
+
+- Looking individual gene expression for MoMacro signature
+```{r}
+gene_list <- c("MERTK","SPP1","S100A8","S100A9","LILRB2","ITGAM","CD14","CD68","FCN1","VCAN","TLR4")
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(FeaturePlot(object = FLI1_manip2_combined_regress, features = gene_list[i], reduction = "umap", cols = c("lightgrey", "red1"), pt.size = 0.5))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- DotPlot
+
+* Look genes representative about a signature differenciation (supervised method)
+```{r,fig.width=22,fig.height=8}
+
+signature = list(HSPC = c("AVP","PROM1","CRHBP","FLT3","HOPX","IGHM","SPINK2","CSF3R"), #"GLIPR1"
+                 CMP = c("CPA3","PRG2","RHEX","ALOX5AP","MS4A2","CLC","RNASE2","CSF2RB","CTSG"),
+                 #primedCMP = c("VWA5A","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44"),
+                 #NoprCMP = c("MS4A3","RNASE2","CLC","CSF2RB","EPX","CTSG"),
+                 GMP =  c("MPO","ELANE","PRTN3","AZU1","RNASE3"), #"CSTA"
+                 MP_M = c("CTSH","LYZ","SAMHD1","S100A8","S100A9","IGSF6","ITGAM","CD14","CD68","FCN1"),
+                 MEP = c("CD38","KLF1","ALDH1A1","BLVRB","HBB","GYPB","MYH10","FSCN1"), #"MT-ATP8","DEPTOR","ACSM3","TMSB10","TFRC","APOC1","ANK1"
+                 #ERP = c("HBB","BLVRB","APOC1","TFR2"),
+                 MKP_MK = c("RGS18","VWA5A","CAVIN2","LMNA","LAT","CD9","ITGA2B","MPIG6B","PF4","GP9","GP6","GP1BA","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40","TUBB1","RAB27B","HPSE"))
+
+
+FLI1_manip2_combined_regress_copy <- FLI1_manip2_combined_regress
+# Define an order of cluster identities
+my_levels <- c(5,3,1,4,6,2,0,9,7,8)
+
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy@meta.data$seurat_clusters
+Idents(FLI1_manip2_combined_regress_copy) <- factor(Idents(FLI1_manip2_combined_regress_copy), levels= my_levels)
+
+# clean les gènes en doublons par type cellulaires
+un <- unlist(signature)
+res <- Map(`[`, signature, relist(!duplicated(un), skeleton = signature))
+
+
+dp <- DotPlot(FLI1_manip2_combined_regress_copy, features = res, dot.scale = 7) + theme(axis.text.x = element_text(size = 12), text = element_text(size = 15),legend.title = element_text(size=14), legend.text = element_text(size=15)) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +  scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() 
+dp
+```
+
+- DotPlot 
+
+* Personal signature without celltype
+```{r,fig.width=15,fig.height=5}
+
+my_levels <- c(5,3,1,4,6,2,0,9,7,8)
+
+# res <- c("AVP","PROM1","CRHBP","FLT3","HOPX","IGHM","CD74","SPINK2","CSTA","VIM","TMSB10","MPO","ELANE","PRTN3","AZU1","RNASE3","CED","CPA3","PRG2","RHEX","ALOX5AP","MS4A2","VWA5A","TPSAB1","KIT","HPGDS","TPSB2","SAMSN1","CLC","CSF2RB","CTSG","RNASE2","TFRC","ALDH1A1","KLF1","CD38","DEPTOR","ANK1","GYPB","TFR2","HBB","BLVRB","APOC1","MPIG6B","PF4","GP9","VWF","PPBP","SH3BP5","SELP","TMEM40","CD9","SAT1","TUBB1","RAB27B","HPSE")
+
+res <- c("AVP","PROM1","CRHBP","FLT3","HOPX","IGHM","SPINK2","CSF3R","CPA3","PRG2","RHEX","ALOX5AP","MS4A2","CLC","RNASE2","CSF2RB","CTSG","MPO","ELANE","PRTN3","AZU1","RNASE3","CD38","KLF1","ALDH1A1","BLVRB","HBB","GYPB","MYH10","FSCN1","VWA5A","CAVIN2","LMNA","LAT","CD9","ITGA2B","MPIG6B","PF4","GP9","GP6","GP1BA","VWF","PPBP","SH3BP5","SELP","LTBP1","TMEM40","TUBB1","RAB27B","HPSE","RGS18")
+
+dp <- DotPlot(FLI1_manip2_combined_regress_copy, features = res, dot.scale = 4) + theme(axis.text.x = element_text(size = 10), text = element_text(size = 14),legend.title = element_text(size=14), legend.text = element_text(size=15)) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +  scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() 
+dp
+```
+
+- DotPlot 
+
+* Signature littérature
+```{r, fig.width=18,fig.height=5}
+
+signature = list(HSPC = c("THY1","PROM1","FLT3","CRHBP1","HOPX","AVP","KIT","SPINK2","CSF3R"),
+                 CMP = c("CPA3","CLC","PRG2","TPSAB1"),
+                 GMP =  c("MPO","ELANE","PRTN3","AZU1","SERPINB10","CTSG"),
+                 MEP = c("CD38","TFRC","DEPTOR","KLF1","TFR2","HBB","APOC1","ANK1","ACSM3"),
+                 ERP = c("HBB","APOC1","TFR2"),
+                 MKP_MK = c("VWA5A","LMNA","CAVIN2","LAT","CD9","STOM","PLEK","ITGA22B","GP9","GP6","GP1BA","PF4","RASGRP2","MPIG6B","VWF","PPBP","SELP","LTBP"))
+ 
+FLI1_manip2_combined_regress_copy <- FLI1_manip2_combined_regress
+# Define an order of cluster identities
+my_levels <- c(5,3,1,4,6,2,0,9,7,8)
+Idents(FLI1_manip2_combined_regress_copy) <- factor(Idents(FLI1_manip2_combined_regress_copy), levels= my_levels)
+
+# clean les gènes en doublons par type cellulaires
+un <- unlist(signature)
+res <- Map(`[`, signature, relist(!duplicated(un), skeleton = signature))
+
+
+dp <- DotPlot(FLI1_manip2_combined_regress_copy, features = res, dot.scale = 4) + theme(axis.text.x = element_text(size = 10), text = element_text(size = 14),legend.title = element_text(size=14), 
+        legend.text = element_text(size=15)) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +  scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() 
+dp
+```
+
+### Celltype signature (Unsupervised Method)
+
+- Table: Top DE gene expression by cluster  
+Checking most differentially expressed gene with FindAllMarkers in each clusters compared to all others.
+```{r , echo=FALSE, message=FALSE, warning=FALSE}
+# FindAllMarkers
+Idents(FLI1_manip2_combined_regress) <- "RNA_snn_res.0.4"
+markers <- FindAllMarkers(FLI1_manip2_combined_regress, features = all.genes_without_ribosomal,only.pos = T, test.use = "bimod", min.pct = 0.1, logfc.threshold = 0.2)
+
+# Table
+top5_genes <- markers %>% group_by(cluster) %>% top_n(5, avg_log2FC)
+top20_genes <- markers %>% group_by(cluster) %>% top_n(20, avg_log2FC)
+
+datatable(markers, filter = 'top', options = list(pageLength = 20)) %>% formatRound(2:4, 2) %>% formatSignif(c(1,5), digits = 2)
+```
+
+- Heatmap 
+TOP 20 gene by cluster
+```{r Heatmap_pat,  echo=FALSE,  fig.width=20,fig.height=15}
+str_top_genes <- unique(as.character(top20_genes$gene))
+DoHeatmap(object = FLI1_manip2_combined_regress, features = as.character(top20_genes$gene),group.by = "RNA_snn_res.0.4", group.bar = T, label = T,size = 3, draw.lines = T, lines.width = 10,group.bar.height = 0.02)+theme(text = element_text(size = 8))
+```
+
+- DotPlot 
+TOP 20 gene by cluster (Unsupervised method)
+```{r dotplot_pat, echo=FALSE, fig.width=22,fig.height=8}
+
+FLI1_manip2_combined_regress_copy <- FLI1_manip2_combined_regress
+# Define an order of cluster identities
+my_levels <- c(5,3,1,4,6,2,0,9,7,8)
+Idents(FLI1_manip2_combined_regress_copy) <- factor(Idents(FLI1_manip2_combined_regress_copy), levels= my_levels)
+
+dp <- DotPlot(FLI1_manip2_combined_regress_copy, features = unique(top5_genes$gene), dot.scale = 5) + theme(axis.text.x = element_text(size = 12)) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +  scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() 
+dp
+```
+
+- Add few columns of interest: Status and Celltype with Status
+```{r}
+myTable <- FLI1_manip2_combined_regress@meta.data
+
+for(i in 1:length(rownames(myTable))){
+  if(myTable$HTO_souporcell_classification[i]%in% "Ctrl3" | myTable$HTO_souporcell_classification[i]%in% "Ctrl4"){
+    myTable$FLI1status[i] <- "Ctrl"
+  }
+  if((myTable$HTO_souporcell_classification[i]%in% "FLI1mViv")){
+    myTable$FLI1status[i] <- "Pat"
+  }
+}
+
+for(i in 1:length(rownames(myTable))){
+  if(myTable$FLI1status[i] %in% "Ctrl"){
+    myTable$celltype_final[i] <- myTable$celltype[i]
+  }
+}
+FLI1_manip2_combined_regress@meta.data <- myTable
+```
+
+- Réattribution du cluster 3 Ctrl en MkP_Mk et création colonne celltype_ident
+```{r}
+table(FLI1_ctrl@meta.data$celltype)
+table(FLI1_pat@meta.data$celltype_final)
+table(paste(FLI1_ctrl@meta.data$seurat_clusters,FLI1_ctrl@meta.data$celltype, sep="_"))
+
+cell_keep <- rownames(FLI1_ctrl@meta.data[which(FLI1_ctrl@meta.data$seurat_clusters %in% c(3)),])
+cell_keep <- paste("ctrl", cell_keep, sep= "_")
+
+cluster_keep <- FLI1_manip2_combined_regress@meta.data[which(rownames(FLI1_manip2_combined_regress@meta.data) %in% cell_keep), "celltype"]
+table(cluster_keep)
+
+FLI1_manip2_combined_regress@meta.data[which(rownames(FLI1_manip2_combined_regress@meta.data) %in% cell_keep), "celltype_final"] <- "MkP_Mk"
+table(FLI1_manip2_combined_regress@meta.data$celltype_final)
+FLI1_manip2_combined_regress@meta.data$celltype <- FLI1_manip2_combined_regress@meta.data$celltype_final
+
+FLI1_manip2_combined_regress@meta.data$celltype_ident <- paste(FLI1_manip2_combined_regress@meta.data$FLI1status,FLI1_manip2_combined_regress@meta.data$celltype_final, sep="_")
+# setwd(OUTPUT_PATH)
+# saveRDS(FLI1_manip2_combined_regress , file= "FLI1_manip2_combined_regress_seurat_done.rds")
+# 
+# myTable$celltype_ident <- paste(FLI1_manip2_combined_regress@meta.data$FLI1status,FLI1_manip2_combined_regress@meta.data$celltype_final, sep="_")
+
+```
+
+```{r}
+table(paste(FLI1_manip2_combined_regress@meta.data$FLI1status,FLI1_manip2_combined_regress@meta.data$seurat_clusters,FLI1_manip2_combined_regress@meta.data$celltype_final, sep="_"))
+```
+
+- ViolinPlot
+Interest genes by clusters
+```{r}
+gene_list <- c("THY1","PROM1","FLT3","CRHBP","HOPX","AVP","KIT","SPINK2","IGHM","GLIPR1","CSF3R","CPA3","CLC","PRG2","TPSAB1","RHEX","ALOX5AP","MS4A2","CD9","LMNA","CAVIN2","LAT","VWA5A","ITGA2B","KRT1","TMEM176B","KIT","HPGDS","TPSB2","TPSAB1","SAMSN1","CD44","MPO","ELANE","PRTN3","AZU1","SERPINB10","CTSG","CSTA","RNASE3","CD38","TFRC","DEPTOR","KLF1","ACSM3","APOC1","TFR1","ANK1","TMSB10","ALDH1A1","MT-ATP8","H2AY","GYPB","CED","TFR2","HBB","APOC1","ANK1","ACSM3","BLVRB","CD9","STOM","LAT","PLEK","GP9","GP6","GP1BA","PF4","RASGRP2","MPIG6B","VWF","PPBP","LTBP1","SH3BP5","SELP","TMEM40","P2YR1","MYH10","MYH9","SLFN14","CD74","VIM","RNASE2","CSF2R","TUBB1","RAB27B","HPSE","FSCN1","RGS18","RAB38","MRP4","VMAT2","ARPC2","CREB3","SLC9A3R1","FLI1","TLN1")
+
+FLI1_manip2_combined_regress_copy <- FLI1_manip2_combined_regress
+# Define an order of cluster identities
+Idents(FLI1_manip2_combined_regress_copy)<-FLI1_manip2_combined_regress_copy@meta.data$seurat_clusters
+my_levels <- c(5,3,1,4,6,2,0,9,7,8)
+Idents(FLI1_manip2_combined_regress_copy) <- factor(Idents(FLI1_manip2_combined_regress_copy), levels= my_levels)
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(VlnPlot(object = FLI1_manip2_combined_regress_copy, features = gene_list[i])+ geom_boxplot(varwidth = T))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- ViolinPlot 
+nCount and nFeature by clusters
+```{r}
+VlnPlot(object = FLI1_manip2_combined_regress_copy, features = "nCount_RNA", pt.size = 0.1) + geom_boxplot(varwidth = T)
+VlnPlot(object = FLI1_manip2_combined_regress_copy, features = "nFeature_RNA", pt.size = 0.1) + geom_boxplot(varwidth = T)
+```
+
+-ViolinPlot
+Gene expression by Ctrl and Pat celltypes
+```{r}
+FLI1_manip2_combined_regress_copy <- FLI1_manip2_combined_regress
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M" )
+Idents(FLI1_manip2_combined_regress_copy) <- factor(Idents(FLI1_manip2_combined_regress_copy), levels= my_levels)
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(VlnPlot(object = FLI1_manip2_combined_regress_copy, features = gene_list[i], pt.size = 0.1)+ geom_boxplot(varwidth = T))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- ViolinPlot 
+nCount and nFeature bby Ctrl and Pat celltypes
+```{r}
+VlnPlot(object = FLI1_manip2_combined_regress_copy, features = "nCount_RNA") + geom_boxplot(varwidth = T)
+VlnPlot(object = FLI1_manip2_combined_regress_copy, features = "nFeature_RNA") + geom_boxplot(varwidth = T)
+```
+
+### Summary Plot
+
+- Metadata construction
+```{r}
+setwd(OUTPUT_PATH)
+metadata <- as.data.frame(FLI1_manip2_combined_regress@meta.data)
+
+#Substitute "RNA_snn_res.0.5" with "RNA_snn_res"
+#colnames(metadata)=gsub("RNA_snn_res.[0-9.]+$","RNA_snn_res",colnames(metadata))
+metadata$UMAP_1 <- FLI1_manip2_combined_regress@reductions$umap@cell.embeddings[,1]
+metadata$UMAP_2 <- FLI1_manip2_combined_regress@reductions$umap@cell.embeddings[,2]
+metadata$tSNE_1 <- FLI1_manip2_combined_regress@reductions$tsne@cell.embeddings[,1]
+metadata$tSNE_2 <- FLI1_manip2_combined_regress@reductions$tsne@cell.embeddings[,2]
+metadata$PC1 <- FLI1_manip2_combined_regress@reductions[["pca"]]@cell.embeddings[,1]
+metadata$PC2 <- FLI1_manip2_combined_regress@reductions[["pca"]]@cell.embeddings[,2]
+metadata$sample_timepoint <- paste(metadata$timepoint, metadata$HTO_souporcell_classification, sep="_")
+
+# write.table(metadata,
+# 	    "metadata_SLFN14_combined_pat_cluster_filtered.txt",
+# 	    sep='\t', quote=F, col.names=NA)
+
+```
+
+- Plot nFeature_RNA 
+The genes/feature number per cell
+```{r fig.width=18,fig.height=10}
+ggplot(metadata, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=nFeature_RNA), size=0.4)+ scale_colour_gradientn(colours=c("darkblue", "blue", "grey", "orange", "red")) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))
+```
+
+- Plot nCount_RNA 
+The reads/nCount number per cell
+```{r fig.width=18,fig.height=10}
+ggplot(metadata, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=nCount_RNA), size=0.4)+ scale_colour_gradientn(colours=c("darkblue", "blue", "grey", "orange", "red")) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))
+```
+
+
+- Ggplot function
+```{r}
+get_cluster_centroids <- function(comp_1,comp_2) {
+	coords=cbind(comp_1,comp_2)
+	clusters=clusters_res
+	centers=c()
+	for (cl in unique(clusters)) {
+		sel=clusters==cl
+		x_center=mean(coords[sel,1])
+		y_center=mean(coords[sel,2])
+		centers=rbind(centers,c(cl,x_center,y_center))
+	}
+	centers=data.frame("Cluster"=as.factor(centers[,1]),
+			   "x_center"=as.numeric(centers[,2]),
+			   "y_center"=as.numeric(centers[,3])
+			   )
+}
+
+color_ordered2=c("indianred1", "darkorange3", "olivedrab3", "red4", "palegreen", "royalblue4", "palevioletred3", "orchid3", "olivedrab2", "palegreen3", "lightseagreen", "steelblue2", "royalblue2", "turquoise1", "chocolate1", "firebrick1", "magenta", "mediumorchid1","darkgreen", "indianred2", "blue")
+```
+
+- Plot Ctrl et Pat nFeature et nCount par Celltype
+```{r fig.width=18,fig.height=10}
+
+clusters_res <- metadata$RNA_snn_res.0.4
+centers=get_cluster_centroids(metadata$UMAP_1,metadata$UMAP_2)
+
+metadata_ctrl <- metadata[which(metadata$FLI1status == "Ctrl"),]
+
+for(i in sort(unique(metadata_ctrl$celltype_final))){
+  metadata2 <- metadata_ctrl[which(metadata_ctrl$celltype_final == i),]
+  p1 <- ggplot(metadata2, aes(x=UMAP_1, y=UMAP_2))+ geom_point(aes(colour=nFeature_RNA), size=0.5) + scale_colour_gradientn(colours=c("darkblue", "blue", "grey", "orange", "red")) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))+ ggtitle(paste("Ctrl",i,"nFeatureRNA", sep="_")) + geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,size=3)
+  p2 <- ggplot(metadata2, aes(x=UMAP_1, y=UMAP_2))+ geom_point(aes(colour=nCount_RNA), size=0.5) + scale_colour_gradientn(colours=c("darkblue", "blue", "grey", "orange", "red")) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))+ ggtitle(paste("Ctrl",i,"nCountRNA", sep="_")) + geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,size=3)
+  plot(p1)
+  plot(p2)
+}
+
+metadata_pat <- metadata[which(metadata$FLI1status == "Pat"),]
+
+for(i in sort(unique(metadata_pat$celltype_final))){
+  metadata2 <- metadata_pat[which(metadata_pat$celltype_final == i),]
+  p1 <- ggplot(metadata2, aes(x=UMAP_1, y=UMAP_2))+ geom_point(aes(colour=nFeature_RNA), size=0.5) + scale_colour_gradientn(colours=c("darkblue", "blue", "grey", "orange", "red")) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))+ ggtitle(paste("Pat",i,"nFeatureRNA", sep="_")) + geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,size=3)
+  p2 <- ggplot(metadata2, aes(x=UMAP_1, y=UMAP_2))+ geom_point(aes(colour=nCount_RNA), size=0.5) + scale_colour_gradientn(colours=c("darkblue", "blue", "grey", "orange", "red")) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))+ ggtitle(paste("Pat",i,"nCountRNA", sep="_")) + geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,size=3)
+  plot(p1)
+  plot(p2)
+}
+```
+
+- Ggplot for all samples 
+```{r fig.width=18,fig.height=10}
+p <- ggplot(metadata, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=factor(clusters_res)), size=0.4) + scale_colour_manual(values=color_ordered2) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))+geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,size=3)
+
+for(i in sort(unique(metadata$HTO_souporcell_classification))){
+  metadata2 <- metadata[which(metadata$HTO_souporcell_classification == i),]
+  clusters_res <- metadata2$RNA_snn_res.0.4
+  p <- ggplot(metadata2, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=factor(clusters_res)), size=0.4) + scale_colour_manual(values=color_ordered2) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))+ ggtitle(i) + geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,
+		  #nudge_y=-1, nudge_x=-1,
+		  size=3)
+  plot(p)
+}
+```
+
+- Plot by timepoint
+```{r fig.width=20,fig.height=10}
+my_levels <- c("MkP_Mk","MEP","MP_M","MkprimedCMP","CMP","GMP","HSPC")
+# DimPlot(FLI1_manip2_combined_regress, group.by = "celltype_final", split.by = "FLI1status", order = my_levels, label=T, label.size = 4.5, pt.size = 1)
+DimPlot(FLI1_manip2_combined_regress, group.by = "celltype_final", split.by = "FLI1status", order = my_levels, label=F, pt.size = 1.2)
+```
+
+- Plot each sample timepoint
+```{r fig.width=18,fig.height=10}
+
+
+p <- ggplot(metadata, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=factor(clusters_res)), size=0.4) + scale_colour_manual(values=color_ordered2) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))+geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,size=3)
+
+for(i in sort(unique(metadata$sample_timepoint))){
+  metadata2 <- metadata[which(metadata$sample_timepoint == i),]
+  clusters_res <- metadata2$RNA_snn_res.0.4
+  p <- ggplot(metadata2, aes(x=UMAP_1, y=UMAP_2)) + geom_point(aes(colour=factor(clusters_res)), size=0.4) + scale_colour_manual(values=color_ordered2) + theme(panel.background = element_rect(fill = 'white', colour = 'black'))+ ggtitle(i) + geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,
+		  #nudge_y=-1, nudge_x=-1,
+		  size=3)
+  plot(p)
+}
+```
+
+- Plot by celltype
+```{r fig.width=18,fig.height=10}
+DimPlot(FLI1_manip2_combined_regress,  group.by = "celltype_final", label = T, order = my_levels, label.size = 7, pt.size = 1)
+```
+
+- Zoom for each Celltype
+```{r,fig.width=18,fig.height=10}
+df <- data.frame(FLI1_manip2_combined_regress_copy@meta.data,
+                 UMAP_1 = FLI1_manip2_combined_regress_copy@reductions$umap@cell.embeddings[,1],
+                 UMAP_2 = FLI1_manip2_combined_regress_copy@reductions$umap@cell.embeddings[,2]
+                 )
+for(i in unique(metadata$celltype_final)){
+  df_celltype <- df[which(df$celltype_final == i),]
+  df_celltype_ctrl <- df_celltype[df_celltype$FLI1status == "Ctrl",]
+  df_celltype_pat <- df_celltype[df_celltype$FLI1status == "Pat",]
+
+  p<- ggplot(df,
+       aes(x=UMAP_1,y=UMAP_2),
+       label = rownames(df))+
+  geom_point(alpha=0.5,
+             color="lightgrey",
+             size = 1)+
+  geom_point(data = df_celltype_ctrl,
+             aes(x=UMAP_1,y=UMAP_2),
+             color="salmon",
+             size = 1)+
+  geom_point(data = df_celltype_pat,
+             aes(x=UMAP_1,y=UMAP_2),
+             color="cornflowerblue",
+             size = 1)+ theme(panel.background = element_rect(fill = 'white', colour = 'black'))+ ggtitle(i) + geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,size=5)
+  plot(p)
+}
+```
+
+- Plot Ctrl vs Pat
+```{r,fig.width=18,fig.height=14}
+ DimPlot(FLI1_manip2_combined_regress, group.by = "FLI1status", pt.size = 0.5)
+```
+
+- Testing: Position of cells in cluster 0 and 7 from Pat object to Merge object
+```{r}
+# Plot Cluster 5,4 and 1 cells from pat cluster object on Merge UMAP
+
+cell_keep <- rownames(FLI1_pat@meta.data[which(FLI1_pat@meta.data$seurat_clusters %in% c(5,4,1)),])
+cell_keep <- paste("pat", cell_keep, sep= "_")
+
+cluster_keep <- FLI1_manip2_combined_regress@meta.data[which(rownames(FLI1_manip2_combined_regress@meta.data) %in% cell_keep), "seurat_clusters"]
+table(cluster_keep)
+
+
+# Plot part 
+
+get_cluster_centroids <- function(comp_1,comp_2) {
+    coords=cbind(comp_1,comp_2)
+    clusters=clusters_res
+    centers=c()
+    for (cl in unique(clusters)) {
+        sel=clusters==cl
+        x_center=mean(coords[sel,1])
+        y_center=mean(coords[sel,2])
+        centers=rbind(centers,c(cl,x_center,y_center))
+    }
+    centers=data.frame("Cluster"=as.factor(centers[,1]),
+               "x_center"=as.numeric(centers[,2]),
+               "y_center"=as.numeric(centers[,3])
+               )
+}
+
+
+df <- data.frame(FLI1_manip2_combined_regress@meta.data,
+                 UMAP_1 = FLI1_manip2_combined_regress@reductions$umap@cell.embeddings[,1],
+                 UMAP_2 = FLI1_manip2_combined_regress@reductions$umap@cell.embeddings[,2]
+                 )
+df$test <- ifelse(rownames(FLI1_manip2_combined_regress@meta.data) %in% cell_keep, "cell_from_C5_C4_and_C1", "other")
+clusters_res <- df$seurat_clusters
+centers=get_cluster_centroids(df$UMAP_1,df$UMAP_2)
+
+setwd(OUTPUT_PATH_DONE)
+# png("UMAP_cells_Cluster_5_4_and_1_pat.png", width = 1080, height = 720)
+p<- ggplot(df,aes(x=UMAP_1,y=UMAP_2),label = rownames(df))+ 
+  geom_point(alpha=0.5,size = 0.7, aes(colour=test))+ theme(panel.background = element_rect(fill = 'white', colour = 'black'))+ ggtitle("UMAP of cells from Cluster 5,4 and 1 from Pat object") + geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,size=3) + scale_color_manual(values = c("firebrick1","lightgrey")) + theme(legend.text = element_text(size=10))
+plot(p) 
+# dev.off()
+
+
+# my_levels <- c("MkP_Mk","MEP","MP_M","MkprimedCMP","CMP","GMP","HSPC")
+
+# Plot Cluster 0 and 7 cells from pat cluster object on Merge UMAP
+
+cell_keep <- rownames(FLI1_pat@meta.data[which(FLI1_pat@meta.data$seurat_clusters %in% c(0,7)),])
+cell_keep <- paste("pat", cell_keep, sep= "_")
+
+cluster_keep <- FLI1_manip2_combined_regress@meta.data[which(rownames(FLI1_manip2_combined_regress@meta.data) %in% cell_keep), "seurat_clusters"]
+table(cluster_keep)
+
+df <- data.frame(FLI1_manip2_combined_regress@meta.data,
+                 UMAP_1 = FLI1_manip2_combined_regress@reductions$umap@cell.embeddings[,1],
+                 UMAP_2 = FLI1_manip2_combined_regress@reductions$umap@cell.embeddings[,2]
+                 )
+df$test <- ifelse(rownames(FLI1_manip2_combined_regress@meta.data) %in% cell_keep, "cell_from_C0_and_C7", "other")
+clusters_res <- df$seurat_clusters
+centers=get_cluster_centroids(df$UMAP_1,df$UMAP_2)
+
+setwd(OUTPUT_PATH_DONE)
+# png("UMAP_cells_Cluster_0_and_7_pat.png", width = 1080, height = 720)
+p<- ggplot(df,aes(x=UMAP_1,y=UMAP_2),label = rownames(df))+ 
+  geom_point(alpha=0.5,size = 0.7, aes(colour=test))+ theme(panel.background = element_rect(fill = 'white', colour = 'black'))+ ggtitle("UMAP of cells from Cluster 0 and 7 from Pat object") + geom_text(aes(x=x_center,y=y_center,label=Cluster),data=centers,size=3) + scale_color_manual(values = c("firebrick1","lightgrey")) + theme(legend.text = element_text(size=10))
+plot(p) 
+# dev.off()
+```
+
+### DEGs Patient vs Control
+
+- Patient vs Temoins for HSPC cluster
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress$celltype_ident
+HSPC_Patients_vs_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress, ident.1 = c("Pat_HSPC"), ident.2 = c("Ctrl_HSPC"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(HSPC_Patients_vs_Temoins.markers, "DEGs_HSPC_Patients_vs_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+- Patient vs Temoins for GMP cluster
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress$celltype_ident
+GMP_Patients_vs_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress, ident.1 = c("Pat_GMP"), ident.2 = c("Ctrl_GMP"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(GMP_Patients_vs_Temoins.markers, "DEGs_GMP_Patients_vs_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+- Patient vs Temoins for CMP cluster
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress$celltype_ident
+CMP_Patients_vs_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress, ident.1 = c("Pat_CMP"), ident.2 = c("Ctrl_CMP"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(CMP_Patients_vs_Temoins.markers, "DEGs_CMP_Patients_vs_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+- Patient vs Temoins for CMPprimed cluster
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress$celltype_ident
+CMPprimed_Patients_vs_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress, ident.1 = c("Pat_MkprimedCMP"), ident.2 = c("Ctrl_MkprimedCMP"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(CMPprimed_Patients_vs_Temoins.markers, "DEGs_CMPprimed_Patients_vs_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+- Patient vs Temoins for MEP cluster
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress$celltype_ident
+MEP_Patients_vs_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress, ident.1 = c("Pat_MEP"), ident.2 = c("Ctrl_MEP"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(MEP_Patients_vs_Temoins.markers, "DEGs_MEP_Patients_vs_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+- Patient vs Temoins for MkP_Mk cluster
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress$celltype_ident
+MkP_Mk_Patients_vs_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress, ident.1 = c("Pat_MkP_Mk"), ident.2 = c("Ctrl_MkP_Mk"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(MkP_Mk_Patients_vs_Temoins.markers, "DEGs_MkP_Mk_Patients_vs_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+- Patient vs Temoins for MkP_Mk and MEP cluster
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress$celltype_ident
+MkP_Mk_Patients_vs_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress, ident.1 = c("Pat_MkP_Mk"), ident.2 = c("Ctrl_MEP"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(MkP_Mk_Patients_vs_Temoins.markers, "DEGs_MkP_Mk_Patients_vs_MEP_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+- Volcano Plot
+```{r}
+OUTPUT_PATH_Volcano <- paste(OUTPUT_PATH_DEGS,"DEGs_Volcano/",sep="/")
+
+setwd("/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/DEGs/INPUT_seurat/DEGs_RAW_celltype_set3_set5")
+
+DEGs_list <- list("DEGs_CMPprimed_Patients_vs_Temoins.markers.txt",
+                  "DEGs_CMP_Patients_vs_Temoins.markers.txt",
+                  "DEGs_GMP_Patients_vs_Temoins.markers.txt",
+                  "DEGs_HSPC_Patients_vs_Temoins.markers.txt",
+                  "DEGs_MEP_Patients_vs_Temoins.markers.txt",
+                  "DEGs_MkP_Mk_Patients_vs_Temoins.markers.txt",
+                  "DEGs_MkP_Mk_Patients_vs_MEP_Temoins.markers.txt")
+
+for (i in DEGs_list){
+  DEGs_temp <-  read.table(i ,sep="\t")
+  DEGs_temp$significant <- ifelse(DEGs_temp$p_val_adj < 0.05 & DEGs_temp$avg_log2FC > 0.37 | DEGs_temp$p_val_adj < 0.05 & DEGs_temp$avg_log2FC < -0.37,
+                              ifelse(DEGs_temp$avg_log2FC > 0,"Upregulated_bimod_0.37","Downregulated_bimod_0.37"),"Not_Significative")
+  # DEGs_temp$significant2 <- ifelse(DEGs_temp$p_val_adj < 0.05&DEGs_temp$avg_log2FC > 1 | DEGs_HSPC_Patients_vs_Temoins.markers_volcano$p_val_adj < 0.05 & DEGs_temp$avg_log2FC < -1,
+  #                             ifelse(DEGs_temp$avg_log2FC > 0,"Upregulated_bimod_1","Downregulated_bimod_1"),"Not_Significative")
+  fileName <- strsplit(i, split=".markers.txt")[[1]][1]
+  # write.table(DEGs_temp, file= paste(OUTPUT_PATH_Volcano,fileName,"_volcano.txt",sep = ""), sep="\t", row.names=T, quote=F)
+}
+
+DEGs_volcano_list <- list("DEGs_CMPprimed_Patients_vs_Temoins_volcano.txt",
+                  "DEGs_CMP_Patients_vs_Temoins_volcano.txt",
+                  "DEGs_GMP_Patients_vs_Temoins_volcano.txt",
+                  "DEGs_HSPC_Patients_vs_Temoins_volcano.txt",
+                  "DEGs_MEP_Patients_vs_Temoins_volcano.txt",
+                  "DEGs_MkP_Mk_Patients_vs_Temoins_volcano.txt",
+                  "DEGs_MkP_Mk_Patients_vs_MEP_Temoins_volcano.txt")
+
+setwd(OUTPUT_PATH_Volcano)
+
+for (i in DEGs_volcano_list){
+  DEGs_temp_volcano <-  read.table(i, sep="\t")
+  DEGs_temp_volcano$genename <- rownames(DEGs_temp_volcano)
+  # number of genes upregulated (> 1.3 FC)
+  length(rownames(DEGs_temp_volcano[DEGs_temp_volcano$significant == "Upregulated_bimod_0.37",]))
+  # number of genes downregulated (< -1.3 FC)
+  length(rownames(DEGs_temp_volcano[DEGs_temp_volcano$significant == "Downregulated_bimod_0.37",]))
+  # number of genes upregulated (> 2 FC)
+  # length(rownames(DEGs_temp_volcano[DEGs_temp_volcano$significant2 == "Upregulated_bimod_1",]))
+  # number of genes downregulated (< -2 FC)
+  # length(rownames(DEGs_temp_volcano[DEGs_temp_volcano$significant2 == "Downregulated_bimod_1",]))
+  fileName <- strsplit(i, split="_volcano.txt")[[1]][1]
+  p <- ggplot(DEGs_temp_volcano, aes(x = avg_log2FC, y = -log10(p_val_adj))) +
+  geom_point(aes(color = significant))+
+  scale_color_manual(values = c("blue", "lightgrey","red")) +
+  theme_bw(base_size = 12) + theme(legend.position = "bottom") +
+  scale_x_continuous( limits=c(-2.5, 2.5)) +
+  # scale_y_continuous( limits=c(-1, 35)) +
+  geom_vline(xintercept = c(-0.37, 0.37),10) +
+  # geom_vline(xintercept = c(-1, 1),10) +
+  geom_hline(yintercept = 1.3) +
+  ggtitle(label = paste(fileName,"_Volcano_Plot")) +
+  geom_text_repel(
+    data = subset(DEGs_temp_volcano, avg_log2FC > 0.37 & p_val_adj < 0.05 | p_val_adj < 0.05 & avg_log2FC < -0.37),
+    aes(label = genename),
+    size = 3.4,
+    box.padding = unit(0.25, "lines"),
+    point.padding = unit(0.25, "lines"))
+                 
+  # png(paste(OUTPUT_PATH_Volcano,"Figure_Volcano/",fileName,"_Volcano_Plot",sep=""), width = 12, height = 6, units = 'in', res = 300)
+  plot(p)
+  # dev.off()
+}
+```
+
+- Radar Plot
+
+Matrice
+```{r}
+setwd(OUTPUT_PATH_Radarplot)
+# Mise en place d'un tableau avec le nombre de cellules par échantillon et type cellulaire
+
+myTable <- FLI1_manip2_combined_regress@meta.data
+myTable$FLI1status_timepoint <- paste(myTable$timepoint, myTable$FLI1status, sep = "_")
+myTable$samples_timepoint <- paste(myTable$timepoint, myTable$HTO_souporcell_classification, sep = "_")
+
+# On instancie une matrice ayant un nombre de lignes égale au nombre d'individus et de colonne égale au nombre de types cellulaires
+myMatrix <- matrix(nrow=length(unique(myTable$samples_timepoint)), ncol = length(unique(myTable$celltype_final)))
+colnames(myMatrix) <-c("HSPC","GMP","CMP","MkprimedCMP","MP_M","MEP","MkP_Mk") 
+rownames(myMatrix) <- unique((myTable$samples_timepoint))
+
+# On rempli la matrice
+for (y in unique(myTable$celltype_final)){
+  for(i in unique(myTable$samples_timepoint)){
+    myMatrix[i,y] <- nrow(myTable[which(myTable$samples_timepoint %in% i & myTable$celltype_final %in% y),])
+  }
+}  
+
+# On instancie une matrice min max afin de calculer le min max pour chaque type cellulaire
+min_max_Matrix <- matrix(nrow=2, ncol = length(unique(myTable$celltype_final)))
+colnames(min_max_Matrix) <- c("HSPC","GMP","CMP","MkprimedCMP","MP_M","MEP","MkP_Mk") 
+rownames(min_max_Matrix) <-c("Max","Min")
+min_max_Matrix[1,]<- colMaxs(myMatrix)
+min_max_Matrix[2,]<- colMins(myMatrix)
+
+# On merge les 2 matrices qu'on convertit en data frame
+myMatrix <- rbind(min_max_Matrix, myMatrix)
+
+# On enregistre la matrice
+
+# write.table(myMatrix, paste(OUTPUT_PATH_Radarplot, "Celltypes_Statistics_nbCells_FLI1_samples_timepoint.tab", sep = "/"), sep = "\t", quote = FALSE)
+
+
+######################### Percentage #############################
+
+# On instancie une matrice ayant un nombre de lignes égale au nombre d'individus et de colonne égale au nombre de types cellulaires
+myMatrix_percent <- matrix(nrow=length(unique(myTable$samples_timepoint)), ncol = length(unique(myTable$celltype_final)))
+colnames(myMatrix_percent) <- c("HSPC","GMP","CMP","MkprimedCMP","MP_M","MEP","MkP_Mk") 
+rownames(myMatrix_percent) <- unique((myTable$samples_timepoint))
+
+# On rempli la matrice
+for (y in unique(myTable$celltype_final)){
+  for(i in unique(myTable$samples_timepoint)){
+    myMatrix_percent[i,y] <- round(x = nrow(myTable[which(myTable$samples_timepoint %in% i & myTable$celltype_final %in% y),])*100/nrow(myTable[which(myTable$samples_timepoint %in% i),]), digit = 2)
+  }
+}  
+
+# test <- data.frame(t(table(SLFN14_ctrl@meta.data$HTO_souporcell_classification)))
+# test$Percent <- test$Freq / sum(test$Freq) * 100
+# 
+# test <- data.frame(t(table(SLFN14_ctrl@meta.data$celltype_final[SLFN14_ctrl@meta.data$HTO_souporcell_classification %in% "Ctrl2"])))
+# test$Percent <- test$Freq / sum(test$Freq) * 100
+
+# On instancie une matrice min max afin de calculer le min max pour chaque type cellulaire
+min_max_Matrix_percent <- matrix(nrow=2, ncol = length(unique(myTable$celltype_final)))
+colnames(min_max_Matrix_percent) <- c("HSPC","GMP","CMP","MkprimedCMP","MP_M","MEP","MkP_Mk") 
+rownames(min_max_Matrix_percent) <-c("Max","Min")
+min_max_Matrix_percent[1,]<- colMaxs(myMatrix_percent)
+min_max_Matrix_percent[2,]<- colMins(myMatrix_percent)
+
+# On merge les 2 matrices qu'on convertit en data frame
+myMatrix_percent <- rbind(min_max_Matrix_percent, myMatrix_percent)
+
+# On enregistre la matrice
+
+# write.table(myMatrix_percent, paste(OUTPUT_PATH_Radarplot, "Celltypes_Percentage_nbCells_FLI1_samples_timepoint.tab", sep = "/"), sep = "\t", quote = FALSE)
+
+######################### Percentage with Ctrl pool and SLFN14 (No Zoom) ####################
+
+# On instancie une matrice ayant un nombre de ligne égale au nombre d'individus et de colonne égale au nombre de types cellulaires
+myMatrix_percent_sample_pool <- matrix(nrow=length(unique(myTable$FLI1status_timepoint)), ncol = length(unique(myTable$celltype_final)))
+colnames(myMatrix_percent_sample_pool) <- c("HSPC","GMP","CMP","MkprimedCMP","MP_M","MEP","MkP_Mk")
+rownames(myMatrix_percent_sample_pool) <- unique((myTable$FLI1status_timepoint))
+
+
+# On rempli la matrice
+
+for (y in unique(myTable$celltype_final)){
+  for(i in unique(myTable$FLI1status_timepoint)){
+      myMatrix_percent_sample_pool[i,y] <- round(x = nrow(myTable[which(myTable$FLI1status_timepoint %in% i & myTable$celltype_final %in% y),])*100/nrow(myTable[which(myTable$FLI1status_timepoint %in% i),]), digit = 2)
+  }
+}  
+
+# On instancie une matrice min max afin de calculer le min max pour chaque type cellulaire (No Zoom)
+min_max_Matrix_percent_sample_pool <- matrix(nrow=2, ncol = length(unique(myTable$celltype_final)))
+colnames(min_max_Matrix_percent_sample_pool) <- c("HSPC","GMP","CMP","MkprimedCMP","MP_M","MEP","MkP_Mk")
+rownames(min_max_Matrix_percent_sample_pool) <-c("Max","Min")
+min_max_Matrix_percent_sample_pool[1,]<- colMaxs(myMatrix_percent_sample_pool)
+min_max_Matrix_percent_sample_pool[2,]<- colMins(myMatrix_percent_sample_pool)
+
+# On merge les 2 matrices qu'on convertit en data frame
+myMatrix_percent_sample_pool <- rbind(min_max_Matrix_percent_sample_pool, myMatrix_percent_sample_pool)
+
+# On enregistre la matrice
+
+setwd(OUTPUT_PATH_Radarplot)
+print(myMatrix)
+# write.table(myMatrix_percent_sample_pool, paste(OUTPUT_PATH_Radarplot, "Celltypes_Percentage_nbCells_FLI1_samples_timepoint_pool.tab", sep = "/"), sep = "\t", quote = FALSE)
+```
+
+- Save RDS
+```{r}
+# setwd(OUTPUT_PATH)
+# saveRDS(FLI1_manip2_combined_regress , file= "FLI1_manip2_combined_regress_seurat_done.rds")
+```
+
+```{r}
+setwd("/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/RDS/Analysis_done/Merge")
+FLI1_manip2_combined_regress <- readRDS("17_11_22_FLI1_manip2_combined_regress_seurat_done.rds")
+```
+
+- ViolinPlot of seurat cluster with FLI1status
+```{r,fig.width=15, fig.height=10}
+FLI1_manip2_combined_regress_copy <- FLI1_manip2_combined_regress
+FLI1_manip2_combined_regress_copy@meta.data$seurat_clusters_ident <- paste(FLI1_manip2_combined_regress_copy@meta.data$seurat_clusters, FLI1_manip2_combined_regress_copy@meta.data$FLI1status, sep="_")
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy@meta.data$seurat_clusters_ident
+
+my_levels <- c("8_Ctrl","8_Pat","7_Ctrl","7_Pat","9_Ctrl","9_Pat","0_Ctrl","0_Pat","2_Ctrl","2_Pat","6_Ctrl","6_Pat","4_Ctrl","4_Pat","1_Ctrl","1_Pat","3_Ctrl","3_Pat","5_Ctrl","5_Pat")
+
+Idents(FLI1_manip2_combined_regress_copy) <- factor(Idents(FLI1_manip2_combined_regress_copy), levels= my_levels)
+
+for (i in 1:length(gene_list)) {
+    tryCatch({
+      print(gene_list[i])
+      print(VlnPlot(object = FLI1_manip2_combined_regress_copy, features = gene_list[i], pt.size = 0.1) + geom_boxplot(varwidth = T))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+- DEGs Seurat_Cluster_Pat vs Seurat_Cluster_Ctrl
+* Cluster 0
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy$seurat_clusters_ident
+C0_Patients_vs_C0_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress_copy, ident.1 = c("0_Pat"), ident.2 = c("0_Ctrl"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(C0_Patients_vs_C0_Temoins.markers, "DEGs_C0_Patients_vs_C0_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+* Cluster 1
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy$seurat_clusters_ident
+C1_Patients_vs_C1_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress_copy, ident.1 = c("1_Pat"), ident.2 = c("1_Ctrl"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(C1_Patients_vs_C1_Temoins.markers, "DEGs_C1_Patients_vs_C1_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+* Cluster 2
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy$seurat_clusters_ident
+C2_Patients_vs_C2_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress_copy, ident.1 = c("2_Pat"), ident.2 = c("2_Ctrl"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(C2_Patients_vs_C2_Temoins.markers, "DEGs_C2_Patients_vs_C2_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+* Cluster 3
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy$seurat_clusters_ident
+C3_Patients_vs_C3_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress_copy, ident.1 = c("3_Pat"), ident.2 = c("3_Ctrl"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(C3_Patients_vs_C3_Temoins.markers, "DEGs_C3_Patients_vs_C3_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+* Cluster 4
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy$seurat_clusters_ident
+C4_Patients_vs_C4_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress_copy, ident.1 = c("4_Pat"), ident.2 = c("4_Ctrl"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(C4_Patients_vs_C4_Temoins.markers, "DEGs_C4_Patients_vs_C4_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+* Cluster 5
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy$seurat_clusters_ident
+C5_Patients_vs_C5_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress_copy, ident.1 = c("5_Pat"), ident.2 = c("5_Ctrl"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(C5_Patients_vs_C5_Temoins.markers, "DEGs_C5_Patients_vs_C5_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+* Cluster 6
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy$seurat_clusters_ident
+C6_Patients_vs_C6_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress_copy, ident.1 = c("6_Pat"), ident.2 = c("6_Ctrl"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(C6_Patients_vs_C6_Temoins.markers, "DEGs_C6_Patients_vs_C6_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+* Cluster 7
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy$seurat_clusters_ident
+C7_Patients_vs_C7_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress_copy, ident.1 = c("7_Pat"), ident.2 = c("7_Ctrl"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(C7_Patients_vs_C7_Temoins.markers, "DEGs_C7_Patients_vs_C7_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+* Cluster 8
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy$seurat_clusters_ident
+C8_Patients_vs_C8_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress_copy, ident.1 = c("8_Pat"), ident.2 = c("8_Ctrl"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(C8_Patients_vs_C8_Temoins.markers, "DEGs_C8_Patients_vs_C8_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+* Cluster 9
+```{r}
+setwd(OUTPUT_PATH_DEGS)
+Idents(FLI1_manip2_combined_regress_copy) <- FLI1_manip2_combined_regress_copy$seurat_clusters_ident
+C9_Patients_vs_C9_Temoins.markers <- FindMarkers(FLI1_manip2_combined_regress_copy, ident.1 = c("9_Pat"), ident.2 = c("9_Ctrl"), min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+# write.table(C9_Patients_vs_C9_Temoins.markers, "DEGs_C9_Patients_vs_C9_Temoins.markers.txt", sep="\t", quote=F)
+```
+
+### MYH10 & TLN1 and FLI1 co-expression
+
+# Plot MYH10 & TLN1 and FLI1 expression in ggplotly
+
+- Define a metadata:
+```{r}
+mtx <- as.matrix(FLI1_manip2_combined_regress@assays[["RNA"]]@scale.data)
+
+metadata <- as.data.frame(FLI1_manip2_combined_regress@meta.data)
+metadata$UMAP_1 <- FLI1_manip2_combined_regress@reductions$umap@cell.embeddings[,1]
+metadata$UMAP_2 <- FLI1_manip2_combined_regress@reductions$umap@cell.embeddings[,2]
+
+metadata$scale_exp_MYH10 <- mtx[which(rownames(mtx)%in%"MYH10"),]
+metadata$scale_exp_TLN1 <- mtx[which(rownames(mtx)%in%"TLN1"),]
+metadata$scale_exp_FLI1 <- mtx[which(rownames(mtx)%in%"FLI1"),]
+
+ggplotly(ggplot(metadata,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=scale_exp_MYH10))+
+    scale_colour_gradient2(low ="cyan",mid="blue",high="red",name="MYH10"))
+
+ggplotly(ggplot(metadata,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=scale_exp_TLN1))+
+    scale_colour_gradient2(low ="cyan",mid="blue",high="red",name="TLN1"))
+
+ggplotly(ggplot(metadata,aes(x=UMAP_1,y=UMAP_2))+geom_point(aes(color=scale_exp_FLI1))+
+    scale_colour_gradient2(low ="cyan",mid="blue",high="red",name="FLI1"))
+```
+
+# Looking MYH10 & TLN1 and FLI1 normalize expression by ScatterPlot
+```{r}
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress@meta.data$HTO_souporcell_classification
+plot1 <- FeatureScatter(FLI1_manip2_combined_regress, feature1 = "MYH10", feature2 = "TLN1", pt.size = 0.5)
+plot2 <- FeatureScatter(FLI1_manip2_combined_regress, feature1 = "FLI1", feature2 = "TLN1", pt.size = 0.5)
+plot3 <- FeatureScatter(FLI1_manip2_combined_regress, feature1 = "MYH10", feature2 = "FLI1", pt.size = 0.5)
+plot1
+plot2
+plot3
+```
+
+# Select MYH10+ & TLN1+ and FLI1+ cells in dataset bases on normalize gene expression
+- ViolinPlot with statistics on Cells positives for the following genes and representing TLN1, MYH10 an FLI1 genes expression
+```{r}
+# MYH10 <- FLI1_manip2_combined_regress@assays[["RNA"]]@data["MYH10",]
+# TLN1 <- FLI1_manip2_combined_regress@assays[["RNA"]]@data["TLN1",]
+# FLI1 <- FLI1_manip2_combined_regress@assays[["RNA"]]@data["FLI1",]
+
+MYH10 <- which(rownames(FLI1_manip2_combined_regress@assays[["RNA"]]@data)%in%"MYH10")
+TLN1 <- which(rownames(FLI1_manip2_combined_regress@assays[["RNA"]]@data)%in%"TLN1")
+FLI1 <- which(rownames(FLI1_manip2_combined_regress@assays[["RNA"]]@data)%in%"FLI1")
+
+my_cells_MYH10_pos <- names(which(FLI1_manip2_combined_regress@assays[["RNA"]]@data[MYH10,]>0))
+print("Cellules MYH10+")
+length(my_cells_MYH10_pos)
+# 3071
+
+my_cells_TLN1_pos <- names(which(FLI1_manip2_combined_regress@assays[["RNA"]]@data[TLN1,]>0))
+print("Cellules TLN1+")
+length(my_cells_TLN1_pos)
+# 8462
+
+my_cells_FLI1_pos <- names(which(FLI1_manip2_combined_regress@assays[["RNA"]]@data[FLI1,]>0))
+print("Cellules FLI1+")
+length(my_cells_FLI1_pos)
+# 6533
+
+MYH10_TLN1_FLI1_pos <- intersect(my_cells_MYH10_pos, c(my_cells_TLN1_pos,my_cells_FLI1_pos))
+print("Cellules MYH10+ & TLN1+ & FLI1+")
+length(MYH10_TLN1_FLI1_pos)
+
+FLI1_manip2_combined_regress_subset_MYH10_TLN1_FLI1_pos <- subset(FLI1_manip2_combined_regress, cells=MYH10_TLN1_FLI1_pos)
+
+Idents(FLI1_manip2_combined_regress_subset_MYH10_TLN1_FLI1_pos) <- FLI1_manip2_combined_regress_subset_MYH10_TLN1_FLI1_pos@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_MYH10_TLN1_FLI1_pos) <- factor(Idents(FLI1_manip2_combined_regress_subset_MYH10_TLN1_FLI1_pos), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_TLN1_FLI1_pos, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_TLN1_FLI1_pos, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_TLN1_FLI1_pos, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# Correlation matrix: MYH10+/TLN1+ & MYH10+/FLI1+ & TLN1+/FLI1+ for an object with positives cells in MYH10/TLN1 and FLI1
+```{r}
+mtx13 <- FLI1_manip2_combined_regress_subset_MYH10_TLN1_FLI1_pos@assays$RNA@data
+mtx13 <- as.matrix(mtx13)
+
+MYH10_pos_exp <- as.numeric(mtx13["MYH10",])
+length(MYH10_pos_exp)
+TLN1_pos_exp <- as.numeric(mtx13["TLN1",])
+length(TLN1_pos_exp)
+FLI1_pos_exp <- as.numeric(mtx13["FLI1",])
+length(FLI1_pos_exp)
+
+shapiro.test(MYH10_pos_exp)
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_pos_exp, TLN1_pos_exp, method = "spearman")
+#        rho 
+# -0.1156579 
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_pos_exp, FLI1_pos_exp, method = "spearman")
+#       rho 
+# 0.3940143 
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_pos_exp, FLI1_pos_exp, method = "spearman")
+#        rho 
+# -0.1101467 
+
+plot(MYH10_pos_exp,TLN1_pos_exp)
+plot(TLN1_pos_exp, FLI1_pos_exp)
+plot(MYH10_pos_exp, FLI1_pos_exp)
+```
+
+# Select MYH10 +/- & TLN1 +/- and FLI1 +/- cells in dataset based on RAW count
+MYH10 and TLN1 don't follow the same distribution like other genes (it's ok for FLI1).
+We have to refers to "scatter_plot_evaluation_dichotomie.r" script in order to know the right cutoff threshold
+Finally the cutoff are MYH10+ >=1 & TLN1 >=12 and FLI1+ >0 (RAW expression)
+```{r}
+MYH10 <- which(rownames(FLI1_manip2_combined_regress@assays[["RNA"]]@counts)%in%"MYH10")
+TLN1 <- which(rownames(FLI1_manip2_combined_regress@assays[["RNA"]]@counts)%in%"TLN1")
+FLI1 <- which(rownames(FLI1_manip2_combined_regress@assays[["RNA"]]@counts)%in%"FLI1")
+
+# MYH10
+my_cells_MYH10_pos <- names(which(FLI1_manip2_combined_regress@assays[["RNA"]]@counts[MYH10,]>=1))
+print("Cellules MYH10+")
+length(my_cells_MYH10_pos)
+#1607
+#3071
+my_cells_MYH10_neg <- names(which(FLI1_manip2_combined_regress@assays[["RNA"]]@counts[MYH10,]<1))
+print("Cellules MYH10-")
+length(my_cells_MYH10_neg)
+#6013
+
+# TLN1
+my_cells_TLN1_pos <- names(which(FLI1_manip2_combined_regress@assays[["RNA"]]@counts[TLN1,]>=12))
+print("Cellules TLN1+")
+length(my_cells_TLN1_pos)
+# 2979
+my_cells_TLN1_neg <- names(which(FLI1_manip2_combined_regress@assays[["RNA"]]@counts[TLN1,]<12))
+print("Cellules TLN1-")
+length(my_cells_TLN1_neg)
+#6105
+
+# FLI1
+my_cells_FLI1_pos <- names(which(FLI1_manip2_combined_regress@assays[["RNA"]]@counts[FLI1,]>0))
+print("Cellules FLI1+")
+length(my_cells_FLI1_pos)
+# 6533
+my_cells_FLI1_neg <- names(which(FLI1_manip2_combined_regress@assays[["RNA"]]@counts[FLI1,]==0))
+print("Cellules FLI1-")
+length(my_cells_FLI1_neg)
+# 2551
+
+# my_cells_MYH10_pos <- rownames(metadata[which(metadata$scale_exp_MYH10>0.73),])
+# my_cells_MYH10_neg <- rownames(metadata[which(metadata$scale_exp_MYH10<0.73),])
+
+# my_cells_TLN1_pos <- rownames(metadata[which(metadata$scale_exp_TLN1>12.2),])
+# my_cells_TLN1_neg <- rownames(metadata[which(metadata$scale_exp_TLN1<12.2),])
+
+print("Nombre de cellules MYH10+ par condition et celltype")
+table(FLI1_manip2_combined_regress@meta.data[which(rownames(FLI1_manip2_combined_regress@meta.data)%in%my_cells_MYH10_pos),"celltype_ident"])
+# (Scale Data)
+# Ctrl_CMP         Ctrl_GMP        Ctrl_HSPC         Ctrl_MEP      Ctrl_MkP_Mk Ctrl_MkprimedCMP        Ctrl_MP_M          Pat_CMP         Pat_HSPC 
+#       36                1               35             1041              104                4                2               20               18 
+#  Pat_MEP       Pat_MkP_Mk  Pat_MkprimedCMP 
+#      391              184                5
+
+# (Raw Count) (>1)
+# Ctrl_CMP   Ctrl_HSPC    Ctrl_MEP Ctrl_MkP_Mk   Ctrl_MP_M     Pat_CMP    Pat_HSPC     Pat_MEP  Pat_MkP_Mk 
+#       18           6        1033          71           2          14           1         358         104
+
+# (Raw Count) (>=1)
+# Ctrl_CMP         Ctrl_GMP        Ctrl_HSPC         Ctrl_MEP      Ctrl_MkP_Mk Ctrl_MkprimedCMP        Ctrl_MP_M          Pat_CMP         Pat_HSPC 
+#       60                2               43             1745              288                7                2               33               18 
+#  Pat_MEP       Pat_MkP_Mk  Pat_MkprimedCMP 
+#      564              302                7
+
+print("Nombre de cellules MYH10- par condition et celltype")             
+table(FLI1_manip2_combined_regress@meta.data[which(rownames(FLI1_manip2_combined_regress@meta.data)%in%my_cells_MYH10_neg),"celltype_ident"])
+# (Scale Data)
+# Ctrl_CMP         Ctrl_GMP        Ctrl_HSPC         Ctrl_MEP      Ctrl_MkP_Mk Ctrl_MkprimedCMP        Ctrl_MP_M          Pat_CMP          Pat_GMP 
+#       224               58              248             1700             2937               75               20               99               43 
+#  Pat_HSPC          Pat_MEP       Pat_MkP_Mk  Pat_MkprimedCMP 
+#       164              377             1207               91 
+
+# (Raw Count)
+# Ctrl_CMP         Ctrl_GMP        Ctrl_HSPC         Ctrl_MEP      Ctrl_MkP_Mk Ctrl_MkprimedCMP        Ctrl_MP_M          Pat_CMP          Pat_GMP 
+#      200               57              240              996             2753               72               20               86               43 
+# Pat_HSPC          Pat_MEP       Pat_MkP_Mk  Pat_MkprimedCMP 
+#      164              204             1089               89 
+
+print("Nombre de cellules TLN1+ par condition et celltype")
+table(FLI1_manip2_combined_regress@meta.data[which(rownames(FLI1_manip2_combined_regress@meta.data)%in%my_cells_TLN1_pos),"celltype_ident"])
+# (Scale Data)
+# Ctrl_CMP         Ctrl_GMP        Ctrl_HSPC         Ctrl_MEP      Ctrl_MkP_Mk Ctrl_MkprimedCMP        Ctrl_MP_M          Pat_CMP          Pat_GMP 
+#       15                1                5              818             2762                7                1               10                1 
+# Pat_HSPC          Pat_MEP       Pat_MkP_Mk  Pat_MkprimedCMP 
+#        1               96             1028                8 
+
+# (Raw Count)
+# Ctrl_MEP      Ctrl_MkP_Mk Ctrl_MkprimedCMP          Pat_MEP       Pat_MkP_Mk 
+#      479             1862                2               20              398 
+
+print("Nombre de cellules TLN1- par condition et celltype")
+table(FLI1_manip2_combined_regress@meta.data[which(rownames(FLI1_manip2_combined_regress@meta.data)%in%my_cells_TLN1_neg),"celltype_ident"])
+# (Scale Data)
+# Ctrl_CMP         Ctrl_GMP        Ctrl_HSPC         Ctrl_MEP      Ctrl_MkP_Mk Ctrl_MkprimedCMP        Ctrl_MP_M          Pat_CMP          Pat_GMP 
+#      245               58              278             1923              279               72               21              109               42 
+# Pat_HSPC          Pat_MEP       Pat_MkP_Mk  Pat_MkprimedCMP 
+#      181              672              363               88 
+
+# (Raw Count)
+# Ctrl_CMP         Ctrl_GMP        Ctrl_HSPC         Ctrl_MEP      Ctrl_MkP_Mk Ctrl_MkprimedCMP        Ctrl_MP_M          Pat_CMP          Pat_GMP 
+#       260               59              283             2196             1081               77               22              119               43 
+#  Pat_HSPC          Pat_MEP       Pat_MkP_Mk  Pat_MkprimedCMP 
+#       182              745              942               96 
+
+print("Nombre de cellules FLI1+ par condition et celltype")
+table(FLI1_manip2_combined_regress@meta.data[which(rownames(FLI1_manip2_combined_regress@meta.data)%in%my_cells_FLI1_pos),"celltype_ident"])
+# (Raw Count)
+# Ctrl_HSPC         Pat_HSPC         Ctrl_GMP          Pat_GMP         Ctrl_CMP          Pat_CMP Ctrl_MkprimedCMP  Pat_MkprimedCMP         Ctrl_MEP          Pat_MEP 
+#   131               91               25               14              123               55               38               49             1909              436 
+# Ctrl_MkP_Mk       Pat_MkP_Mk        Ctrl_MP_M         Pat_MP_M 
+#    2510             1148                4                0 
+print("Nombre de cellules FLI1- par condition et celltype")
+table(FLI1_manip2_combined_regress@meta.data[which(rownames(FLI1_manip2_combined_regress@meta.data)%in%my_cells_FLI1_neg),"celltype_ident"])
+# (Raw Count)
+#   Ctrl_HSPC         Pat_HSPC         Ctrl_GMP          Pat_GMP         Ctrl_CMP          Pat_CMP Ctrl_MkprimedCMP  Pat_MkprimedCMP         Ctrl_MEP          Pat_MEP 
+#         152               91               34               29              137               64               41               47              832              332 
+# Ctrl_MkP_Mk       Pat_MkP_Mk        Ctrl_MP_M         Pat_MP_M 
+#         531              243               18                0 
+
+# MYH10 & TLN1
+MYH10_TLN1_pos <- intersect(my_cells_MYH10_pos, my_cells_TLN1_pos)
+print("Cellules MYH10+ et TLN1+")
+length(MYH10_TLN1_pos)
+# 220
+# 563
+MYH10_TLN1_neg <- intersect(my_cells_MYH10_neg, my_cells_TLN1_neg)
+print("Cellules MYH10- et TLN1-")
+length(MYH10_TLN1_neg)
+# 3597
+
+MYH10_pos_TLN1_neg <- intersect(my_cells_MYH10_pos, my_cells_TLN1_neg)
+print("Cellules MYH10+ et TLN1-")
+length(MYH10_pos_TLN1_neg)
+# 1361
+# 2508
+MYH10_neg_TLN1_pos <- intersect(my_cells_MYH10_neg, my_cells_TLN1_pos)
+print("Cellules MYH10- et TLN1+")
+length(MYH10_neg_TLN1_pos)
+# 2271
+# 2416
+
+# MYH10 & FLI1
+MYH10_FLI1_pos <- intersect(my_cells_MYH10_pos, my_cells_FLI1_pos)
+print("Cellules MYH10+ et FLI1+")
+length(MYH10_FLI1_pos)
+# 2154
+MYH10_FLI1_neg <- intersect(my_cells_MYH10_neg, my_cells_FLI1_neg)
+print("Cellules MYH10- et FLI1-")
+length(MYH10_FLI1_neg)
+# 2154
+
+MYH10_pos_FLI1_neg <- intersect(my_cells_MYH10_pos, my_cells_FLI1_neg)
+print("Cellules MYH10+ et FLI1-")
+length(MYH10_pos_FLI1_neg)
+# 917
+MYH10_neg_FLI1_pos <- intersect(my_cells_MYH10_neg, my_cells_FLI1_pos)
+print("Cellules MYH10- et FLI1+")
+length(MYH10_neg_FLI1_pos)
+# 4379
+
+# TLN1 & FLI1
+TLN1_FLI1_pos <- intersect(my_cells_TLN1_pos, my_cells_FLI1_pos)
+print("Cellules TLN1+ et FLI1+")
+length(TLN1_FLI1_pos)
+# 2715
+TLN1_FLI1_neg <- intersect(my_cells_TLN1_neg, my_cells_FLI1_neg)
+print("Cellules TLN1- et FLI1-")
+length(TLN1_FLI1_neg)
+# 2287
+
+TLN1_pos_FLI1_neg <- intersect(my_cells_TLN1_pos, my_cells_FLI1_neg)
+print("Cellules TLN1+ et FLI1-")
+length(TLN1_pos_FLI1_neg)
+# 264
+TLN1_neg_FLI1_pos <- intersect(my_cells_TLN1_neg, my_cells_FLI1_pos)
+print("Cellules TLN1- et FLI1+")
+length(TLN1_neg_FLI1_pos)
+# 3818
+
+```
+
+# ViolinPlot with statistics representing TLN1, MYH10 an FLI1 genes
+```{r}
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress@meta.data$celltype_ident
+Idents(FLI1_manip2_combined_regress) <- factor(Idents(FLI1_manip2_combined_regress), levels= my_levels)
+VlnPlot(FLI1_manip2_combined_regress, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Looking MYH10, TLN1 and FLI1 expression in MEP and MK for MYH10+/- cells
+```{r}
+# Subset object keeping only MEP and MK
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress@meta.data$celltype_final
+FLI1_manip2_combined_regress_MEP_MK <- subset(FLI1_manip2_combined_regress, idents = c("MEP","MkP_Mk"))
+
+#Attribute a new column with all info: celltype+FLI1status and MYH10+/-
+FLI1_manip2_combined_regress_MEP_MK@meta.data$MYH10status <- ifelse(rownames(FLI1_manip2_combined_regress_MEP_MK@meta.data)%in%my_cells_MYH10_pos, "MYH10+","MYH10-")
+FLI1_manip2_combined_regress_MEP_MK@meta.data$MYH10status_celltype_ident <- paste(FLI1_manip2_combined_regress_MEP_MK@meta.data$MYH10status,FLI1_manip2_combined_regress_MEP_MK@meta.data$celltype_ident,sep="_")
+
+#ViolinPlot looking the expression 
+Idents(FLI1_manip2_combined_regress_MEP_MK) <- FLI1_manip2_combined_regress_MEP_MK@meta.data$MYH10status_celltype_ident
+my_levels <- c("MYH10-_Ctrl_MEP","MYH10-_Pat_MEP","MYH10+_Ctrl_MEP","MYH10+_Pat_MEP","MYH10-_Ctrl_MkP_Mk","MYH10-_Pat_MkP_Mk","MYH10+_Ctrl_MkP_Mk","MYH10+_Pat_MkP_Mk")
+Idents(FLI1_manip2_combined_regress_MEP_MK) <- factor(Idents(FLI1_manip2_combined_regress_MEP_MK), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_MEP_MK, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_MEP_MK, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_MEP_MK, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Looking MYH10, TLN1 and FLI1 expression in MK for MYH10+/- cells
+```{r}
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress@meta.data$celltype_final
+FLI1_manip2_combined_regress_MK <- subset(FLI1_manip2_combined_regress, idents = c("MkP_Mk"))
+
+#Attribute a new column with all info: celltype+FLI1status and MYH10+/-
+FLI1_manip2_combined_regress_MK@meta.data$MYH10status <- ifelse(rownames(FLI1_manip2_combined_regress_MK@meta.data)%in%my_cells_MYH10_pos, "MYH10+","MYH10-")
+FLI1_manip2_combined_regress_MK@meta.data$MYH10status_celltype_ident <- paste(FLI1_manip2_combined_regress_MK@meta.data$MYH10status,FLI1_manip2_combined_regress_MK@meta.data$celltype_ident,sep="_")
+
+#ViolinPlot looking the expression 
+Idents(FLI1_manip2_combined_regress_MK) <- FLI1_manip2_combined_regress_MK@meta.data$MYH10status_celltype_ident
+my_levels <- c("MYH10-_Ctrl_MkP_Mk","MYH10-_Pat_MkP_Mk","MYH10+_Ctrl_MkP_Mk","MYH10+_Pat_MkP_Mk")
+Idents(FLI1_manip2_combined_regress_MK) <- factor(Idents(FLI1_manip2_combined_regress_MK), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_MK, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_MK, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_MK, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Looking MYH10, TLN1 and FLI1 expression in MEP and MK for TLN1+/- cells
+```{r}
+#Attribute a new column with all info: celltype+FLI1status and TLN1+/-
+FLI1_manip2_combined_regress_MEP_MK@meta.data$TLN1status <- ifelse(rownames(FLI1_manip2_combined_regress_MEP_MK@meta.data)%in%my_cells_TLN1_pos, "TLN1+","TLN1-")
+FLI1_manip2_combined_regress_MEP_MK@meta.data$TLN1status_celltype_ident <- paste(FLI1_manip2_combined_regress_MEP_MK@meta.data$TLN1status,FLI1_manip2_combined_regress_MEP_MK@meta.data$celltype_ident,sep="_")
+
+#ViolinPlot looking the expression 
+Idents(FLI1_manip2_combined_regress_MEP_MK) <- FLI1_manip2_combined_regress_MEP_MK@meta.data$TLN1status_celltype_ident
+my_levels <- c("TLN1-_Ctrl_MEP","TLN1-_Pat_MEP","TLN1+_Ctrl_MEP","TLN1+_Pat_MEP","TLN1-_Ctrl_MkP_Mk","TLN1-_Pat_MkP_Mk","TLN1+_Ctrl_MkP_Mk","TLN1+_Pat_MkP_Mk")
+Idents(FLI1_manip2_combined_regress_MEP_MK) <- factor(Idents(FLI1_manip2_combined_regress_MEP_MK), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_MEP_MK, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_MEP_MK, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_MEP_MK, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Looking MYH10, TLN1 and FLI1 expression in MEP and MK for FLI1+/- cells
+```{r}
+#Attribute a new column with all info: Celltype + FLI1status and FLI1+/-
+FLI1_manip2_combined_regress_MEP_MK@meta.data$FLI1statusBIS <- ifelse(rownames(FLI1_manip2_combined_regress_MEP_MK@meta.data)%in%my_cells_FLI1_pos, "FLI1+","FLI1-")
+FLI1_manip2_combined_regress_MEP_MK@meta.data$FLI1status_celltype_ident <- paste(FLI1_manip2_combined_regress_MEP_MK@meta.data$FLI1statusBIS,FLI1_manip2_combined_regress_MEP_MK@meta.data$celltype_ident,sep="_")
+
+#ViolinPlot looking the expression 
+Idents(FLI1_manip2_combined_regress_MEP_MK) <- FLI1_manip2_combined_regress_MEP_MK@meta.data$FLI1status_celltype_ident
+my_levels <- c("FLI1-_Ctrl_MEP","FLI1-_Pat_MEP","FLI1+_Ctrl_MEP","FLI1+_Pat_MEP","FLI1-_Ctrl_MkP_Mk","FLI1-_Pat_MkP_Mk","FLI1+_Ctrl_MkP_Mk","FLI1+_Pat_MkP_Mk")
+Idents(FLI1_manip2_combined_regress_MEP_MK) <- factor(Idents(FLI1_manip2_combined_regress_MEP_MK), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_MEP_MK, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_MEP_MK, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_MEP_MK, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on MYH10+ cells
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_pos <- subset(FLI1_manip2_combined_regress, cells=my_cells_MYH10_pos)
+
+Idents(FLI1_manip2_combined_regress_subset_MYH10_pos) <- FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_MYH10_pos) <- factor(Idents(FLI1_manip2_combined_regress_subset_MYH10_pos), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_pos, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_pos, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_pos, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on MYH10- cells
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_neg <- subset(FLI1_manip2_combined_regress, cells=my_cells_MYH10_neg)
+
+Idents(FLI1_manip2_combined_regress_subset_MYH10_neg) <- FLI1_manip2_combined_regress_subset_MYH10_neg@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_MYH10_neg) <- factor(Idents(FLI1_manip2_combined_regress_subset_MYH10_neg), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_neg, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_neg, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_neg, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on MYH10+ and TLN1+ cells
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_TLN1_pos <- subset(FLI1_manip2_combined_regress, cells=MYH10_TLN1_pos)
+
+Idents(FLI1_manip2_combined_regress_subset_MYH10_TLN1_pos) <- FLI1_manip2_combined_regress_subset_MYH10_TLN1_pos@meta.data$celltype_ident
+my_levels <- c("Ctrl_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk")
+Idents(FLI1_manip2_combined_regress_subset_MYH10_TLN1_pos) <- factor(Idents(FLI1_manip2_combined_regress_subset_MYH10_TLN1_pos), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_TLN1_pos, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_TLN1_pos, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_TLN1_pos, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on MYH10- and TLN1- cells
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_TLN1_neg <- subset(FLI1_manip2_combined_regress, cells=MYH10_TLN1_neg)
+
+Idents(FLI1_manip2_combined_regress_subset_MYH10_TLN1_neg) <- FLI1_manip2_combined_regress_subset_MYH10_TLN1_neg@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_MYH10_TLN1_neg) <- factor(Idents(FLI1_manip2_combined_regress_subset_MYH10_TLN1_neg), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_TLN1_neg, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_TLN1_neg, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_TLN1_neg, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on MYH10+ and TLN1- cells
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_pos_TLN1_neg <- subset(FLI1_manip2_combined_regress, cells=MYH10_pos_TLN1_neg)
+
+Idents(FLI1_manip2_combined_regress_subset_MYH10_pos_TLN1_neg) <- FLI1_manip2_combined_regress_subset_MYH10_pos_TLN1_neg@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_MYH10_pos_TLN1_neg) <- factor(Idents(FLI1_manip2_combined_regress_subset_MYH10_pos_TLN1_neg), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_pos_TLN1_neg, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_pos_TLN1_neg, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_pos_TLN1_neg, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on MYH10- and TLN1+ cells
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_neg_TLN1_pos <- subset(FLI1_manip2_combined_regress, cells=MYH10_neg_TLN1_pos)
+
+Idents(FLI1_manip2_combined_regress_subset_MYH10_neg_TLN1_pos) <- FLI1_manip2_combined_regress_subset_MYH10_neg_TLN1_pos@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_MYH10_neg_TLN1_pos) <- factor(Idents(FLI1_manip2_combined_regress_subset_MYH10_neg_TLN1_pos), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_neg_TLN1_pos, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_neg_TLN1_pos, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_neg_TLN1_pos, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on MYH10+ and FLI1+ cells
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_FLI1_pos <- subset(FLI1_manip2_combined_regress, cells=MYH10_FLI1_pos)
+
+Idents(FLI1_manip2_combined_regress_subset_MYH10_FLI1_pos) <- FLI1_manip2_combined_regress_subset_MYH10_FLI1_pos@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_MYH10_FLI1_pos) <- factor(Idents(FLI1_manip2_combined_regress_subset_MYH10_FLI1_pos), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_FLI1_pos, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_FLI1_pos, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_FLI1_pos, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on MYH10- and FLI1- cells
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_FLI1_neg <- subset(FLI1_manip2_combined_regress, cells=MYH10_FLI1_neg)
+
+Idents(FLI1_manip2_combined_regress_subset_MYH10_FLI1_neg) <- FLI1_manip2_combined_regress_subset_MYH10_FLI1_neg@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_MYH10_FLI1_neg) <- factor(Idents(FLI1_manip2_combined_regress_subset_MYH10_FLI1_neg), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_FLI1_neg, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_FLI1_neg, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_FLI1_neg, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on MYH10+ FLI1- cells
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_pos_FLI1_neg <- subset(FLI1_manip2_combined_regress, cells=MYH10_pos_FLI1_neg)
+
+Idents(FLI1_manip2_combined_regress_subset_MYH10_pos_FLI1_neg) <- FLI1_manip2_combined_regress_subset_MYH10_pos_FLI1_neg@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_MYH10_pos_FLI1_neg) <- factor(Idents(FLI1_manip2_combined_regress_subset_MYH10_pos_FLI1_neg), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_pos_FLI1_neg, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_pos_FLI1_neg, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_pos_FLI1_neg, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on MYH10- FLI1+ cells
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_neg_FLI1_pos <- subset(FLI1_manip2_combined_regress, cells=MYH10_neg_FLI1_pos)
+
+Idents(FLI1_manip2_combined_regress_subset_MYH10_neg_FLI1_pos) <- FLI1_manip2_combined_regress_subset_MYH10_neg_FLI1_pos@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_MYH10_neg_FLI1_pos) <- factor(Idents(FLI1_manip2_combined_regress_subset_MYH10_neg_FLI1_pos), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_neg_FLI1_pos, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_neg_FLI1_pos, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_MYH10_neg_FLI1_pos, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on TLN1+ FLI1+ cells
+```{r}
+FLI1_manip2_combined_regress_subset_TLN1_FLI1_pos <- subset(FLI1_manip2_combined_regress, cells=TLN1_FLI1_pos)
+
+Idents(FLI1_manip2_combined_regress_subset_TLN1_FLI1_pos) <- FLI1_manip2_combined_regress_subset_TLN1_FLI1_pos@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_TLN1_FLI1_pos) <- factor(Idents(FLI1_manip2_combined_regress_subset_TLN1_FLI1_pos), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_FLI1_pos, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_FLI1_pos, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_FLI1_pos, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on TLN1- FLI1- cells
+```{r}
+FLI1_manip2_combined_regress_subset_TLN1_FLI1_neg <- subset(FLI1_manip2_combined_regress, cells=TLN1_FLI1_neg)
+
+Idents(FLI1_manip2_combined_regress_subset_TLN1_FLI1_neg) <- FLI1_manip2_combined_regress_subset_TLN1_FLI1_neg@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_TLN1_FLI1_neg) <- factor(Idents(FLI1_manip2_combined_regress_subset_TLN1_FLI1_pos), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_FLI1_neg, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_FLI1_neg, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_FLI1_neg, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on TLN1+ FLI1- cells
+```{r}
+FLI1_manip2_combined_regress_subset_TLN1_pos_FLI1_neg <- subset(FLI1_manip2_combined_regress, cells=TLN1_pos_FLI1_neg)
+
+Idents(FLI1_manip2_combined_regress_subset_TLN1_pos_FLI1_neg) <- FLI1_manip2_combined_regress_subset_TLN1_pos_FLI1_neg@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_TLN1_pos_FLI1_neg) <- factor(Idents(FLI1_manip2_combined_regress_subset_TLN1_FLI1_pos), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_pos_FLI1_neg, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_pos_FLI1_neg, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_pos_FLI1_neg, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+# ViolinPlot: Subset on TLN1- FLI1+ cells
+```{r}
+FLI1_manip2_combined_regress_subset_TLN1_neg_FLI1_pos <- subset(FLI1_manip2_combined_regress, cells=TLN1_neg_FLI1_pos)
+
+Idents(FLI1_manip2_combined_regress_subset_TLN1_neg_FLI1_pos) <- FLI1_manip2_combined_regress_subset_TLN1_neg_FLI1_pos@meta.data$celltype_ident
+my_levels <- c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M")
+Idents(FLI1_manip2_combined_regress_subset_TLN1_neg_FLI1_pos) <- factor(Idents(FLI1_manip2_combined_regress_subset_TLN1_neg_FLI1_pos), levels= my_levels)
+
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_neg_FLI1_pos, features ="TLN1") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_neg_FLI1_pos, features ="MYH10") + geom_boxplot(varwidth = T)
+VlnPlot(FLI1_manip2_combined_regress_subset_TLN1_neg_FLI1_pos, features ="FLI1") + geom_boxplot(varwidth = T)
+```
+
+### Correlation between MYH10 and interest genes
+
+# Correlation: MYH10 and TLN1 / TLN1 and FLI1 / MYH10 and FLI1
+```{r}
+mtx1 <- FLI1_manip2_combined_regress@assays$RNA@data
+mtx1 <- as.matrix(mtx1)
+
+MYH10_exp <- as.numeric(mtx1["MYH10",])
+TLN1_exp <- as.numeric(mtx1["TLN1",])
+FLI1_exp <- as.numeric(mtx1["FLI1",])
+
+ks.test(x=MYH10_exp,y='pnorm',alternative='two.sided')
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_exp, TLN1_exp, method = "spearman")
+#        rho 
+# -0.3728938 
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_exp, FLI1_exp, method = "spearman")
+#       rho 
+# 0.4343845
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_exp, FLI1_exp, method = "spearman")
+#        rho 
+# -0.2035109 
+plot(MYH10_exp, TLN1_exp)
+plot(TLN1_exp, FLI1_exp)
+plot(MYH10_exp, FLI1_exp)
+```
+
+# MYH10+ : Select cells by celltype and FLI1status
+```{r}
+#Celltype
+MEP <- rownames(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data)[which(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data$celltype_final%in%"MEP")]
+print("Cells MYH10+ MEP")
+length(MEP)
+MkP_Mk <- rownames(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data)[which(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data$celltype_final%in%"MkP_Mk")]
+print("Cells MYH10+ MkP_MK")
+length(MkP_Mk)
+
+#Celltype control
+Ctrl_MEP <- rownames(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data)[which(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data$celltype_ident%in%"Ctrl_MEP")]
+print("Cells MYH10+ Controls MEP")
+length(Ctrl_MEP)
+Ctrl_MkP_Mk <- rownames(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data)[which(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data$celltype_ident%in%"Ctrl_MkP_Mk")]
+print("Cells MYH10+ Controls MkP_Mk")
+length(Ctrl_MkP_Mk)
+
+#Celltype patient
+Pat_MEP <- rownames(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data)[which(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data$celltype_ident%in%"Pat_MEP")]
+print("Cells MYH10+ Patient MEP")
+length(Pat_MEP)
+Pat_MkP_Mk <- rownames(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data)[which(FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data$celltype_ident%in%"Pat_MkP_Mk")]
+print("Cells MYH10+ Patient MkP_Mk")
+length(Pat_MkP_Mk)
+```
+
+# Correlation: MYH10+ & TLN1 for MEP / TLN1 and FLI1 for MEP / MYH10 and FLI1 for MEP
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_pos_MEP <- subset(FLI1_manip2_combined_regress_subset_MYH10_pos, cells=MEP)
+
+mtx2 <- FLI1_manip2_combined_regress_subset_MYH10_pos_MEP@assays$RNA@data
+mtx2 <- as.matrix(mtx2)
+
+MYH10_exp <- as.numeric(mtx2["MYH10",])
+length(MYH10_exp)
+# 2309
+TLN1_exp <- as.numeric(mtx2["TLN1",])
+length(TLN1_exp)
+# 2309
+FLI1_exp <- as.numeric(mtx2["FLI1",])
+length(FLI1_exp)
+# 2309
+
+shapiro.test(MYH10_exp)
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_exp, TLN1_exp, method = "spearman")
+#         rho 
+# -0.07125829 
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_exp, FLI1_exp, method = "spearman")
+#       rho 
+# 0.3566983
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_exp, FLI1_exp, method = "spearman")
+#         rho 
+# -0.09811886 
+
+plot(MYH10_exp, TLN1_exp)
+plot(TLN1_exp, FLI1_exp)
+plot(MYH10_exp, FLI1_exp)
+```
+
+# Correlation: MYH10+ and TLN1 for MkP_Mk / TLN1 and FLI1 for MkP_Mk / MYH10 and FLI1 for MkP_Mk 
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_pos_MkP_Mk <- subset(FLI1_manip2_combined_regress_subset_MYH10_pos, cells=MkP_Mk)
+
+mtx3 <- FLI1_manip2_combined_regress_subset_MYH10_pos_MkP_Mk@assays$RNA@data
+mtx3 <- as.matrix(mtx3)
+
+MYH10_exp <- as.numeric(mtx3["MYH10",])
+length(MYH10_exp)
+# 590
+TLN1_exp <- as.numeric(mtx3["TLN1",])
+length(TLN1_exp)
+# 590
+FLI1_exp <- as.numeric(mtx3["FLI1",])
+length(FLI1_exp)
+# 590
+
+shapiro.test(MYH10_exp)
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_exp, TLN1_exp, method = "spearman")
+#       rho 
+# -0.233698 
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_exp, FLI1_exp, method = "spearman")
+#      rho 
+# 0.297503
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_exp, FLI1_exp, method = "spearman")
+#        rho 
+# -0.1096697 
+
+plot(MYH10_exp, TLN1_exp)
+plot(TLN1_exp, FLI1_exp)
+plot(MYH10_exp, FLI1_exp)
+```
+
+# Correlation: MYH10+ & TLN1 for MEP_Ctrl / TLN1 and FLI1 for MEP_Ctrl / MYH10 and FLI1 for MEP_Ctrl
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_pos_MEP_Ctrl <- subset(FLI1_manip2_combined_regress_subset_MYH10_pos, cells=Ctrl_MEP)
+
+mtx4 <- FLI1_manip2_combined_regress_subset_MYH10_pos_MEP_Ctrl@assays$RNA@data
+mtx4 <- as.matrix(mtx4)
+
+MYH10_exp_MEP_Ctrl <- as.numeric(mtx4["MYH10",])
+length(MYH10_exp_MEP_Ctrl)
+# 1745
+TLN1_exp_MEP_Ctrl <- as.numeric(mtx4["TLN1",])
+length(TLN1_exp_MEP_Ctrl)
+# 1745
+FLI1_exp_MEP_Ctrl <- as.numeric(mtx4["FLI1",])
+length(FLI1_exp_MEP_Ctrl)
+# 1745
+
+shapiro.test(MYH10_exp_MEP_Ctrl)
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_exp_MEP_Ctrl, TLN1_exp_MEP_Ctrl, method = "spearman")
+#        rho 
+# -0.1120907 
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_exp_MEP_Ctrl, FLI1_exp_MEP_Ctrl, method = "spearman")
+#      rho 
+# 0.393463 
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_exp_MEP_Ctrl, FLI1_exp_MEP_Ctrl, method = "spearman")
+#        rho 
+# -0.1065292 
+
+plot(MYH10_exp_MEP_Ctrl, TLN1_exp_MEP_Ctrl)
+plot(TLN1_exp_MEP_Ctrl, FLI1_exp_MEP_Ctrl)
+plot(MYH10_exp_MEP_Ctrl, FLI1_exp_MEP_Ctrl)
+```
+
+# Correlation: MYH10+ & TLN1 for MEP_Pat / TLN1 and FLI1 for MEP_Pat / MYH10 and FLI1 for MEP_Pat
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_pos_MEP_Pat <- subset(FLI1_manip2_combined_regress_subset_MYH10_pos, cells=Pat_MEP)
+
+mtx5 <- FLI1_manip2_combined_regress_subset_MYH10_pos_MEP_Pat@assays$RNA@data
+mtx5 <- as.matrix(mtx5)
+
+MYH10_exp_MEP_Pat <- as.numeric(mtx5["MYH10",])
+length(MYH10_exp_MEP_Pat)
+# 564
+TLN1_exp_MEP_Pat <- as.numeric(mtx5["TLN1",])
+length(TLN1_exp_MEP_Pat)
+# 564
+FLI1_exp_MEP_Pat <- as.numeric(mtx5["FLI1",])
+length(FLI1_exp_MEP_Pat)
+# 564
+
+
+shapiro.test(MYH10_exp_MEP_Pat)
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_exp_MEP_Pat, TLN1_exp_MEP_Pat, method = "spearman")
+#       rho 
+# 0.1384869 
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_exp_MEP_Pat, FLI1_exp_MEP_Pat, method = "spearman")
+#       rho 
+# 0.1526673 
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_exp_MEP_Pat, FLI1_exp_MEP_Pat, method = "spearman")
+#        rho 
+# -0.0143189 
+
+plot(MYH10_exp_MEP_Pat, TLN1_exp_MEP_Pat)
+plot(TLN1_exp_MEP_Pat, FLI1_exp_MEP_Pat)
+plot(MYH10_exp_MEP_Pat, FLI1_exp_MEP_Pat)
+```
+
+# Correlation: MYH10+ & TLN1 for MkP_Mk_Ctrl  / TLN1 and FLI1 for MkP_Mk_Ctrl / MYH10 and FLI1 for MkP_Mk_Ctrl
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_pos_MkP_Mk_Ctrl <- subset(FLI1_manip2_combined_regress_subset_MYH10_pos, cells=Ctrl_MkP_Mk)
+
+mtx6 <- FLI1_manip2_combined_regress_subset_MYH10_pos_MkP_Mk_Ctrl@assays$RNA@data
+mtx6 <- as.matrix(mtx6)
+
+MYH10_exp_MkP_Mk_Ctrl <- as.numeric(mtx6["MYH10",])
+length(MYH10_exp_MkP_Mk_Ctrl)
+# 288
+TLN1_exp_MkP_Mk_Ctrl <- as.numeric(mtx6["TLN1",])
+length(TLN1_exp_MkP_Mk_Ctrl)
+# 288
+FLI1_exp_MkP_Mk_Ctrl <- as.numeric(mtx6["FLI1",])
+length(FLI1_exp_MkP_Mk_Ctrl)
+# 288
+
+shapiro.test(MYH10_exp_MkP_Mk_Ctrl)
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_exp_MkP_Mk_Ctrl, TLN1_exp_MkP_Mk_Ctrl, method = "spearman")
+#         rho 
+# -0.09876863 
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_exp_MkP_Mk_Ctrl, FLI1_exp_MkP_Mk_Ctrl, method = "spearman")
+#       rho 
+# 0.3278679 
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_exp_MkP_Mk_Ctrl, FLI1_exp_MkP_Mk_Ctrl, method = "spearman")
+#         rho 
+# -0.07963039 
+
+plot(MYH10_exp_MkP_Mk_Ctrl, TLN1_exp_MkP_Mk_Ctrl)
+plot(TLN1_exp_MkP_Mk_Ctrl, FLI1_exp_MkP_Mk_Ctrl)
+plot(MYH10_exp_MkP_Mk_Ctrl, FLI1_exp_MkP_Mk_Ctrl)
+```
+
+# Correlation: MYH10+ & TLN1 for MkP_Mk_Pat / TLN1 and FLI1 for MkP_Mk_Pat / MYH10 and FLI1 for MkP_Mk_Pat
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_pos_MkP_Mk_Pat <- subset(FLI1_manip2_combined_regress_subset_MYH10_pos, cells=Pat_MkP_Mk)
+
+mtx7 <- FLI1_manip2_combined_regress_subset_MYH10_pos_MkP_Mk_Pat@assays$RNA@data
+mtx7 <- as.matrix(mtx7)
+
+MYH10_exp_MkP_Mk_Pat <- as.numeric(mtx7["MYH10",])
+length(MYH10_exp_MkP_Mk_Pat)
+# 302
+TLN1_exp_MkP_Mk_Pat <- as.numeric(mtx7["TLN1",])
+length(TLN1_exp_MkP_Mk_Pat)
+# 302
+FLI1_exp_MkP_Mk_Pat <- as.numeric(mtx7["FLI1",])
+length(FLI1_exp_MkP_Mk_Pat)
+# 302
+
+shapiro.test(MYH10_exp_MkP_Mk_Pat)
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_exp_MkP_Mk_Pat, TLN1_exp_MkP_Mk_Pat, method = "spearman")
+#       rho 
+# -0.1926592
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_exp_MkP_Mk_Pat, FLI1_exp_MkP_Mk_Pat, method = "spearman")
+#       rho 
+# 0.2577403
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_exp_MkP_Mk_Pat, FLI1_exp_MkP_Mk_Pat, method = "spearman")
+#        rho 
+# -0.1256728 
+plot(MYH10_exp_MkP_Mk_Pat, TLN1_exp_MkP_Mk_Pat)
+plot(TLN1_exp_MkP_Mk_Pat, FLI1_exp_MkP_Mk_Pat)
+plot(MYH10_exp_MkP_Mk_Pat, FLI1_exp_MkP_Mk_Pat)
+```
+
+
+# ALL_cells: Select cells by celltype and FLI1status
+```{r}
+MEP_all_cells <- rownames(FLI1_manip2_combined_regress@meta.data)[which(FLI1_manip2_combined_regress@meta.data$celltype_final%in%"MEP")]
+print("MEP all cells")
+length(MEP_all_cells)
+# 3509
+MkP_Mk_all_cells <- rownames(FLI1_manip2_combined_regress@meta.data)[which(FLI1_manip2_combined_regress@meta.data$celltype_final%in%"MkP_Mk")]
+print("MkP_Mk all cells")
+length(MkP_Mk_all_cells)
+# 4432
+
+MEP_Ctrl_all_cells <- rownames(FLI1_manip2_combined_regress@meta.data)[which(FLI1_manip2_combined_regress@meta.data$celltype_ident%in%"Ctrl_MEP")]
+print("Controls MEP all cells")
+length(MEP_Ctrl_all_cells)
+# 2741
+MkP_Mk_Ctrl_all_cells <- rownames(FLI1_manip2_combined_regress@meta.data)[which(FLI1_manip2_combined_regress@meta.data$celltype_ident%in%"Ctrl_MkP_Mk")]
+print("Controls MkP_Mk all cells")
+length(MkP_Mk_Ctrl_all_cells)
+# 3041
+
+MEP_Pat_all_cells <- rownames(FLI1_manip2_combined_regress@meta.data)[which(FLI1_manip2_combined_regress@meta.data$celltype_ident%in%"Pat_MEP")]
+print("Patient MEP all cells")
+length(MEP_Pat_all_cells)
+# 768
+MkP_Mk_Pat_all_cells <- rownames(FLI1_manip2_combined_regress@meta.data)[which(FLI1_manip2_combined_regress@meta.data$celltype_ident%in%"Pat_MkP_Mk")]
+print("Patient MkP_Mk all cells")
+length(MkP_Mk_Pat_all_cells)
+# 1391
+```
+
+# Correlation: ALL_cells MEP
+```{r}
+FLI1_manip2_combined_regress_subset_all_cells_MEP <- subset(FLI1_manip2_combined_regress, cells=MEP_all_cells)
+
+mtx8 <- FLI1_manip2_combined_regress_subset_all_cells_MEP@assays$RNA@data
+mtx8 <- as.matrix(mtx8)
+
+MYH10_exp_all_cells_MEP <- as.numeric(mtx8["MYH10",])
+length(MYH10_exp_all_cells_MEP)
+# 3509
+TLN1_exp_all_cells_MEP <- as.numeric(mtx8["TLN1",])
+length(TLN1_exp_all_cells_MEP)
+# 3509
+FLI1_exp_all_cells_MEP <- as.numeric(mtx8["FLI1",])
+length(FLI1_exp_all_cells_MEP)
+# 3509
+
+shapiro.test(MYH10_exp_all_cells_MEP)
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_exp_all_cells_MEP, TLN1_exp_all_cells_MEP, method = "spearman")
+#        rho 
+# -0.1502165 
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_exp_all_cells_MEP, FLI1_exp_all_cells_MEP, method = "spearman")
+#       rho 
+# 0.3705143 
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_exp_all_cells_MEP, FLI1_exp_all_cells_MEP, method = "spearman")
+#        rho 
+# -0.1040397 
+
+plot(MYH10_exp_all_cells_MEP, TLN1_exp_all_cells_MEP)
+plot(TLN1_exp_all_cells_MEP, FLI1_exp_all_cells_MEP)
+plot(MYH10_exp_all_cells_MEP, FLI1_exp_all_cells_MEP)
+```
+
+# Correlation: ALL_cells MkP_Mk
+```{r}
+FLI1_manip2_combined_regress_subset_all_cells_MkP_Mk <- subset(FLI1_manip2_combined_regress, cells=MkP_Mk_all_cells)
+
+mtx9 <- FLI1_manip2_combined_regress_subset_all_cells_MkP_Mk@assays$RNA@data
+mtx9 <- as.matrix(mtx9)
+
+MYH10_exp_all_cells_MkP_Mk <- as.numeric(mtx9["MYH10",])
+length(MYH10_exp_all_cells_MkP_Mk)
+# 4432
+TLN1_exp_all_cells_MkP_Mk <- as.numeric(mtx9["TLN1",])
+length(TLN1_exp_all_cells_MkP_Mk)
+# 4432
+FLI1_exp_all_cells_MkP_Mk <- as.numeric(mtx9["FLI1",])
+length(FLI1_exp_all_cells_MkP_Mk)
+# 4432
+
+shapiro.test(MYH10_exp_all_cells_MkP_Mk)
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_exp_all_cells_MkP_Mk, TLN1_exp_all_cells_MkP_Mk, method = "spearman")
+#        rho 
+# -0.2929075 
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_exp_all_cells_MkP_Mk, FLI1_exp_all_cells_MkP_Mk, method = "spearman")
+#       rho 
+# 0.1762717 
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_exp_all_cells_MkP_Mk, FLI1_exp_all_cells_MkP_Mk, method = "spearman")
+#        rho 
+# -0.0554702 
+
+plot(MYH10_exp_all_cells_MkP_Mk,TLN1_exp_all_cells_MkP_Mk)
+plot(TLN1_exp_all_cells_MkP_Mk, FLI1_exp_all_cells_MkP_Mk)
+plot(MYH10_exp_all_cells_MkP_Mk, FLI1_exp_all_cells_MkP_Mk)
+```
+
+# Correlation: ALL_cells Pat_MEP
+```{r}
+FLI1_manip2_combined_regress_subset_all_cells_Pat_MEP <- subset(FLI1_manip2_combined_regress, cells=MEP_Pat_all_cells)
+
+mtx10 <- FLI1_manip2_combined_regress_subset_all_cells_Pat_MEP@assays$RNA@data
+mtx10 <- as.matrix(mtx10)
+
+MYH10_exp_all_cells_Pat_MEP <- as.numeric(mtx10["MYH10",])
+length(MYH10_exp_all_cells_Pat_MEP)
+# 768
+TLN1_exp_all_cells_Pat_MEP <- as.numeric(mtx10["TLN1",])
+length(TLN1_exp_all_cells_Pat_MEP)
+# 768
+FLI1_exp_all_cells_Pat_MEP<- as.numeric(mtx10["FLI1",])
+length(FLI1_exp_all_cells_Pat_MEP)
+# 768
+
+shapiro.test(MYH10_exp_all_cells_Pat_MEP)
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_exp_all_cells_Pat_MEP, TLN1_exp_all_cells_Pat_MEP, method = "spearman")
+#        rho 
+# 0.02630751 
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_exp_all_cells_Pat_MEP, FLI1_exp_all_cells_Pat_MEP, method = "spearman")
+#       rho 
+# 0.1728545 
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_exp_all_cells_Pat_MEP, FLI1_exp_all_cells_Pat_MEP, method = "spearman")
+#        rho 
+# 0.02598621 
+
+plot(MYH10_exp_all_cells_Pat_MEP,TLN1_exp_all_cells_Pat_MEP)
+plot(TLN1_exp_all_cells_Pat_MEP, FLI1_exp_all_cells_Pat_MEP)
+plot(MYH10_exp_all_cells_Pat_MEP, FLI1_exp_all_cells_Pat_MEP)
+```
+
+# Correlation: ALL_cells Pat_MkP_Mk
+```{r}
+FLI1_manip2_combined_regress_subset_all_cells_Pat_MkP_Mk <- subset(FLI1_manip2_combined_regress, cells=MkP_Mk_Pat_all_cells)
+
+mtx11 <- FLI1_manip2_combined_regress_subset_all_cells_Pat_MkP_Mk@assays$RNA@data
+mtx11 <- as.matrix(mtx11)
+
+MYH10_exp_all_cells_Pat_MkP_Mk <- as.numeric(mtx11["MYH10",])
+length(MYH10_exp_all_cells_Pat_MkP_Mk)
+TLN1_exp_all_cells_Pat_MkP_Mk <- as.numeric(mtx11["TLN1",])
+length(TLN1_exp_all_cells_Pat_MkP_Mk)
+FLI1_exp_all_cells_Pat_MkP_Mk <- as.numeric(mtx11["FLI1",])
+length(FLI1_exp_all_cells_Pat_MkP_Mk)
+
+shapiro.test(MYH10_exp_all_cells_Pat_MkP_Mk)
+print("Correlation MYH10 and TLN1")
+cor.test(MYH10_exp_all_cells_Pat_MkP_Mk, TLN1_exp_all_cells_Pat_MkP_Mk, method = "spearman")
+#        rho 
+# -0.3507962 
+print("Correlation TLN1 and FLI1")
+cor.test(TLN1_exp_all_cells_Pat_MkP_Mk, FLI1_exp_all_cells_Pat_MkP_Mk, method = "spearman")
+#       rho 
+# 0.3283754 
+print("Correlation MYH10 and FLI1")
+cor.test(MYH10_exp_all_cells_Pat_MkP_Mk, FLI1_exp_all_cells_Pat_MkP_Mk, method = "spearman")
+#        rho 
+# -0.1417933 
+
+plot(MYH10_exp_all_cells_Pat_MkP_Mk,TLN1_exp_all_cells_Pat_MkP_Mk)
+plot(TLN1_exp_all_cells_Pat_MkP_Mk, FLI1_exp_all_cells_Pat_MkP_Mk)
+plot(MYH10_exp_all_cells_Pat_MkP_Mk, FLI1_exp_all_cells_Pat_MkP_Mk)
+```
+
+#  Correlation (ALL_cells: Pat_MkP_Mk) 
+- Matrix for all genes with MYH10 expression
+```{r}
+mtx12 <- FLI1_manip2_combined_regress_subset_all_cells_Pat_MkP_Mk@assays$RNA@data
+mtx12 <- as.matrix(mtx12)
+
+MYH10_exp_all_cells_Pat_MkP_Mk <- as.numeric(mtx12["MYH10",])
+length(MYH10_exp_all_cells_Pat_MkP_Mk)
+TLN1_exp_all_cells_Pat_MkP_Mk <- as.numeric(mtx12["TLN1",])
+length(TLN1_exp_all_cells_Pat_MkP_Mk)
+FLI1_exp_all_cells_Pat_MkP_Mk <- as.numeric(mtx12["FLI1",])
+length(FLI1_exp_all_cells_Pat_MkP_Mk)
+
+# On instancie une matrice ayant un nombre de lignes égale au nombre de gènes et de colonne égale au nombre de corrélation
+myMatrix_correlation <- matrix(nrow=length(rownames(mtx12)), ncol = 1)
+colnames(myMatrix_correlation) <- "Correlation_MYH10_genes" 
+rownames(myMatrix_correlation) <- rownames(mtx12)
+
+for(i in 1:length(rownames(mtx12))){
+  genes_exp_all_cells_Pat_MkP_Mk <- as.numeric(mtx12[rownames(mtx12)[i],])
+  correlation_test_pat <- cor.test(MYH10_exp_all_cells_Pat_MkP_Mk, genes_exp_all_cells_Pat_MkP_Mk , method = "spearman")
+  correlation_value_pat <- correlation_test_pat$estimate
+   myMatrix_correlation[i,1] <- as.numeric(correlation_value_pat)
+}
+# myMatrix_correlation[,1][order(myMatrix_correlation[,1])]
+```
+
+# Correlation (ALL_cells: Ctrl_MkP_Mk) 
+- Matrix for all genes with MYH10 expression
+```{r}
+FLI1_manip2_combined_regress_subset_all_cells_Ctrl_MkP_Mk <- subset(FLI1_manip2_combined_regress, cells=MkP_Mk_Ctrl_all_cells)
+
+mtx13 <- FLI1_manip2_combined_regress_subset_all_cells_Ctrl_MkP_Mk@assays$RNA@data
+mtx13 <- as.matrix(mtx13)
+MYH10_exp_all_cells_Ctrl_MkP_Mk <- as.numeric(mtx13["MYH10",])
+
+# On instancie une matrice ayant un nombre de lignes égale au nombre de gènes et de colonne égale au nombre de corrélation
+myMatrix_correlation_Ctrl <- matrix(nrow=length(rownames(mtx13)), ncol = 1)
+colnames(myMatrix_correlation_Ctrl) <- "Correlation_MYH10_genes" 
+rownames(myMatrix_correlation_Ctrl) <- rownames(mtx13)
+
+for(i in 1:length(rownames(mtx13))){
+  genes_exp_all_cells_Ctrl_MkP_Mk <- as.numeric(mtx13[rownames(mtx13)[i],])
+  correlation_test_ctrl <- cor.test(MYH10_exp_all_cells_Ctrl_MkP_Mk, genes_exp_all_cells_Ctrl_MkP_Mk , method = "spearman")
+  correlation_value_ctrl <- correlation_test_ctrl$estimate
+   myMatrix_correlation_Ctrl[i,1] <- as.numeric(correlation_value_ctrl)
+}
+# myMatrix_correlation_Ctrl[,1][order(myMatrix_correlation_Ctrl[,1])]
+```
+
+# DEGs
+- Comparison MYH10+ and MYH10- cells in MkP_Mk patients
+```{r}
+MYH10_Pat_Mk <- which(rownames(FLI1_manip2_combined_regress_subset_all_cells_Pat_MkP_Mk@assays[["RNA"]]@counts)%in%"MYH10")
+my_cells_MYH10_pos_Pat_Mk <- names(which(FLI1_manip2_combined_regress_subset_all_cells_Pat_MkP_Mk@assays[["RNA"]]@counts[MYH10_Pat_Mk,]>=1))
+print("MYH10+ MkP_Mk Patient")
+length(my_cells_MYH10_pos_Pat_Mk)
+# 302
+my_cells_MYH10_neg_Pat_Mk <- names(which(FLI1_manip2_combined_regress_subset_all_cells_Pat_MkP_Mk@assays[["RNA"]]@counts[MYH10_Pat_Mk,]<1))
+print("MYH10- MkP_Mk Patient")
+length(my_cells_MYH10_neg_Pat_Mk)
+# 1089
+MYH10.markers <- FindMarkers(FLI1_manip2_combined_regress_subset_all_cells_Pat_MkP_Mk, ident.1 = my_cells_MYH10_pos_Pat_Mk, ident.2 = my_cells_MYH10_neg_Pat_Mk, min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+print(MYH10.markers)
+# setwd("/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/DEGs/INPUT_seurat")
+# write.table(MYH10.markers, "DEGs_MYH10+_vs_MYH10-_Pat_MkP_Mk.markers.txt", sep="\t", quote=F)
+```
+
+# DEGs
+- Comparison Pat Mk and Ctrl Mk in MYH10+ cells
+```{r}
+FLI1_manip2_combined_regress_subset_MYH10_pos <- subset(FLI1_manip2_combined_regress, cells=my_cells_MYH10_pos)
+Idents(FLI1_manip2_combined_regress_subset_MYH10_pos) <- FLI1_manip2_combined_regress_subset_MYH10_pos@meta.data$celltype_ident
+MYH10.markers <- FindMarkers(FLI1_manip2_combined_regress_subset_MYH10_pos, ident.1 = "Pat_MkP_Mk", ident.2 = "Ctrl_MkP_Mk", min.pct = 0.1, test.use = "bimod", only.pos=FALSE)
+print(MYH10.markers)
+setwd("/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/DEGs/INPUT_seurat")
+write.table(MYH10.markers, "DEGs_Pat_MkP_Mk_vs_Ctrl_MkP_Mk_MYH10+_set3_set5.markers.txt", sep="\t", quote=F)
+```
+
+# enrichR pathway exploration
+- Genes deregulate in Phagosome, Endocytosis, Protein processing in endoplasmic reticulum and Platelet activation for MkP_Mk cells 
+```{r}
+# Phagosome
+Phagosome_MkP_Mk <- c("ITGB1","ATP6AP1","ITGB3","NCF4","HLA-B","HLA-C","HLA-A","CORO1A","THBS1","ACTB","TUBA4A","ACTG1","HLA-E","TUBA1C","SEC61G","TUBB1","ATP6V0C","TUBA8")
+
+# Endocytosis
+Endocytosis_MkP_Mk <- c("ARF1","SRC","ARPC1B","HLA-B","HLA-C","CXCR4","HLA-A","ARPC5","HLA-E","RUFY1","SNX3","DNM3","RAB10","EHD3","DAB2","ARPC2","CAPZB","PARD3")
+
+# Protein processing in endoplasmic reticulum 
+Protein_processing_MkP_Mk <- c("PPP1R15A","TRAM1","RPN2","SSR4","SSR3","PDIA6","SVIP","PDIA4","HSP90B1","UBE2J1","LMAN1","SEC61G","SSR1","P4HB")
+
+# Platelet activation
+Platelet_MkP_Mk <- c("VASP","ITGB1","PTGIR","GUCY1B1","FCER1G","SRC","ITGB3","ITGA2B","SNAP23","GP1BA","RASGRP2","GP6","ACTB","MYL12A","PIK3R6","ACTG1","PTGS1","RAP1B","GP9","P2RX1","TBXAS1","TLN1","PRKG1","FERMT3")
+```
+
+- Gene deregulate in Phagosome, Endocytosis, Protein processing in endoplasmic reticulum and Platelet activation for MEP cells 
+```{r}
+# Phagosome
+Phagosome_MEP <- c("TUBA1B","FCGR2A","ITGB3","NCF4","CALR","CORO1A","THBS1","ACTB","TUBA4A")
+
+# Endocytosis
+Endocytosis_MEP <- c("ARPC1B","WAS")
+
+# Protein processing in endoplasmic reticulum 
+Protein_processing_MEP <- c("DIA3","HSPA5","DAD1","SSR3","CALR","PDIA6","HSP90B1")
+
+# Platelet activation
+Platelet_MEP <- c("VASP","GUCY1B1","FCER1G","VWF","ITGB3","F2R","GP1BA","RASGRP2","ACTB","MYL12A","MYLK","MYL12B","GP9","FCGR2A","TBXAS1","LCP2","TLN1","FERMT3")
+```
+
+- Gene deregulate in Phagosome, Endocytosis, Protein processing in endoplasmic reticulum and Platelet activation for MEP and MkP_Mk cells 
+```{r}
+# Phagosome
+Phagosome <- unique(c("ITGB1","ATP6AP1","ITGB3","NCF4","HLA-B","HLA-C","HLA-A","CORO1A","THBS1","ACTB","TUBA4A","ACTG1","HLA-E","TUBA1C","SEC61G","TUBB1","ATP6V0C","TUBA8","TUBA1B","FCGR2A","ITGB3","NCF4","CALR","CORO1A","THBS1","ACTB","TUBA4A"))
+
+# Endocytosis
+Endocytosis <- unique(c("ARF1","SRC","ARPC1B","HLA-B","HLA-C","CXCR4","HLA-A","ARPC5","HLA-E","RUFY1","SNX3","DNM3","RAB10","EHD3","DAB2","ARPC2","CAPZB","PARD3","ARPC1B","WAS"))
+
+# Protein processing in endoplasmic reticulum 
+Protein_processing <- unique(c("PPP1R15A","TRAM1","RPN2","SSR4","SSR3","PDIA6","SVIP","PDIA4","HSP90B1","UBE2J1","LMAN1","SEC61G","SSR1","P4HB","DIA3","HSPA5","DAD1","SSR3","CALR","PDIA6","HSP90B1"))
+
+# Platelet activation
+Platelet<- unique(c("VASP","ITGB1","PTGIR","GUCY1B1","FCER1G","SRC","ITGB3","ITGA2B","SNAP23","GP1BA","RASGRP2","GP6","ACTB","MYL12A","PIK3R6","ACTG1","PTGS1","RAP1B","GP9","P2RX1","TBXAS1","TLN1","PRKG1","FERMT3","VASP","GUCY1B1","FCER1G","VWF","ITGB3","F2R","GP1BA","RASGRP2","ACTB","MYL12A","MYLK","MYL12B","GP9","FCGR2A","TBXAS1","LCP2","TLN1","FERMT3"))
+
+pathway <- list(Phagosome,Endocytosis,Protein_processing,Platelet)
+names(pathway) <- c("Phagosome","Endocytosis","Protein_processing","Platelet")
+```
+
+# DotPlot of genes expression involve in above pathway
+```{r, fig.width=15, fig.height=10 }
+Idents(FLI1_manip2_combined_regress) <- FLI1_manip2_combined_regress@meta.data$celltype_ident
+FLI1_manip2_combined_regress@meta.data$celltype_ident <- factor(FLI1_manip2_combined_regress@meta.data$celltype_ident,
+                                           levels = c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M" ))
+
+setwd("/home/hannouchel/workspace/FLI1/05_Output/03_Seurat/01_merge/01_Seurat_Output/01_FLI1_2021_set3_set5/Rapport_HTML")
+for (i in 1:length(pathway)){
+  # png(paste(names(pathway[i]),".png",sep=""),width=1080,height = 720)
+  dp <- DotPlot(FLI1_manip2_combined_regress,
+                idents = c("Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk", "Pat_MkP_Mk"),
+                features = pathway[i]) +
+    geom_point(aes(size=pct.exp),
+             shape = 21,
+             colour="black",
+             stroke=0.5
+             ) +
+    scale_colour_gradient2(low = "steelblue",
+                         mid = "ivory1",
+                         high = "red") +
+    guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) +
+    RotatedAxis()+coord_flip()
+  plot(dp)
+  # dev.off()
+}
+```
+
+<!-- # Phagosome pathway -->
+<!-- ```{r} -->
+
+<!-- Idents(FLI1_manip2_combined_regress) <- "celltype_ident" -->
+<!-- FLI1_manip2_combined_regress@meta.data$celltype_ident <- factor(FLI1_manip2_combined_regress@meta.data$celltype_ident, -->
+<!--                                            levels = c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M" )) -->
+
+<!-- dp <- DotPlot(FLI1_manip2_combined_regress, -->
+<!--               idents = c("Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk", "Pat_MkP_Mk"), -->
+<!--               features = Phagosome -->
+<!--               ) +  -->
+<!--   geom_point(aes(size=pct.exp), -->
+<!--              shape = 21, -->
+<!--              colour="black", -->
+<!--              stroke=0.5 -->
+<!--              ) +  -->
+<!--   scale_colour_gradient2(low = "steelblue", -->
+<!--                          mid = "ivory1", -->
+<!--                          high = "red" -->
+<!--                          ) +  -->
+<!--   guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")) -->
+<!--          ) +  -->
+<!--   RotatedAxis( -->
+<!--   ) + ggtitle("Protein processing genes") + -->
+<!--   theme(plot.title = element_text(hjust = 0.5)) -->
+
+<!-- dp -->
+<!-- ``` -->
+
+<!-- # Endocytosis pathway -->
+<!-- ```{r} -->
+
+<!-- Idents(FLI1_manip2_combined_regress) <- "celltype_ident" -->
+<!-- FLI1_manip2_combined_regress@meta.data$celltype_ident <- factor(FLI1_manip2_combined_regress@meta.data$celltype_ident, -->
+<!--                                            levels = c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M" )) -->
+
+<!-- dp <- DotPlot(FLI1_manip2_combined_regress, -->
+<!--               idents = c("Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk", "Pat_MkP_Mk"), -->
+<!--               features = Endocytosis -->
+<!--               ) +  -->
+<!--   geom_point(aes(size=pct.exp), -->
+<!--              shape = 21, -->
+<!--              colour="black", -->
+<!--              stroke=0.5 -->
+<!--              ) +  -->
+<!--   scale_colour_gradient2(low = "steelblue", -->
+<!--                          mid = "ivory1", -->
+<!--                          high = "red" -->
+<!--                          ) +  -->
+<!--   guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")) -->
+<!--          ) +  -->
+<!--   RotatedAxis( -->
+<!--   ) + ggtitle("Endocytosis genes") + -->
+<!--   theme(plot.title = element_text(hjust = 0.5)) -->
+
+<!-- dp -->
+<!-- ``` -->
+
+<!-- # Protein processing pathway -->
+<!-- ```{r} -->
+
+<!-- Idents(FLI1_manip2_combined_regress) <- "celltype_ident" -->
+<!-- FLI1_manip2_combined_regress@meta.data$celltype_ident <- factor(FLI1_manip2_combined_regress@meta.data$celltype_ident, -->
+<!--                                            levels = c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M" )) -->
+
+<!-- dp <- DotPlot(FLI1_manip2_combined_regress, -->
+<!--               idents = c("Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk", "Pat_MkP_Mk"), -->
+<!--               features = Protein_processing -->
+<!--               ) +  -->
+<!--   geom_point(aes(size=pct.exp), -->
+<!--              shape = 21, -->
+<!--              colour="black", -->
+<!--              stroke=0.5 -->
+<!--              ) +  -->
+<!--   scale_colour_gradient2(low = "steelblue", -->
+<!--                          mid = "ivory1", -->
+<!--                          high = "red" -->
+<!--                          ) +  -->
+<!--   guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")) -->
+<!--          ) +  -->
+<!--   RotatedAxis( -->
+<!--   ) + ggtitle("Protein processing genes") + -->
+<!--   theme(plot.title = element_text(hjust = 0.5)) -->
+
+<!-- dp -->
+<!-- ``` -->
+
+<!-- # Platelet pathway -->
+<!-- ```{r} -->
+
+<!-- Idents(FLI1_manip2_combined_regress) <- "celltype_ident" -->
+<!-- FLI1_manip2_combined_regress@meta.data$celltype_ident <- factor(FLI1_manip2_combined_regress@meta.data$celltype_ident, -->
+<!--                                            levels = c("Ctrl_HSPC","Pat_HSPC","Ctrl_GMP","Pat_GMP","Ctrl_CMP","Pat_CMP","Ctrl_MkprimedCMP","Pat_MkprimedCMP","Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk","Pat_MkP_Mk","Ctrl_MP_M","Pat_MP_M" )) -->
+
+<!-- dp <- DotPlot(FLI1_manip2_combined_regress, -->
+<!--               idents = c("Ctrl_MEP","Pat_MEP","Ctrl_MkP_Mk", "Pat_MkP_Mk"), -->
+<!--               features = Platelet -->
+<!--               ) +  -->
+<!--   geom_point(aes(size=pct.exp), -->
+<!--              shape = 21, -->
+<!--              colour="black", -->
+<!--              stroke=0.5 -->
+<!--              ) +  -->
+<!--   scale_colour_gradient2(low = "steelblue", -->
+<!--                          mid = "ivory1", -->
+<!--                          high = "red" -->
+<!--                          ) +  -->
+<!--   guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")) -->
+<!--          ) +  -->
+<!--   RotatedAxis( -->
+<!--   ) + ggtitle("Platelet genes") + -->
+<!--   theme(plot.title = element_text(hjust = 0.5)) -->
+
+<!-- dp -->
+<!-- ``` -->
+
+#
