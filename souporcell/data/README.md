@@ -1,6 +1,6 @@
 # Necessary data to run Souporcell
 
-On both experiments (2020-42-set1 and 2020-42-set2).
+On all experiments (Run325 Run331 2021-42-set3 and 2021-42-set5).
 
 <br>
 <ul>
