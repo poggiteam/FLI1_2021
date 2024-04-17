@@ -1,10 +1,10 @@
-# ETV6_2020 : Seurat analysis
+# FLI1_2021 : Seurat analysis
 
 ## Overview
 
 This repository describes how the scRNAseq data Seurat analysis was performed. 
 It contains the instructions and material to reproduce the analysis reported in the article. 
-<br>Source code is available in the github repository (ETV6_2020/seurat_analysis/script). 
+<br>Source code is available in the github repository (FLI1_2021/seurat_analysis/script). 
 <br>Required data and builded Docker images are available in SRA/GEO and Zenodo. 
 Intructions to reproduce the analysis are provided below.
 
@@ -28,7 +28,7 @@ In order to prepare the environment for analysis execution, it is required to:
 </ul>
 
 <h2>1) Clone the github repository</h2>
-Use your favorite method to clone this repository in a chosen folder. This will create a "ETV6_2020" folder with all the source code. You must set an environment variable called WORKING_DIR with a value set to the path to this folder.
+Use your favorite method to clone this repository in a chosen folder. This will create a "FLI1_2021" folder with all the source code. You must set an environment variable called WORKING_DIR with a value set to the path to this folder.
 
 On linux:
 <pre><code>export WORKING_DIR=/enter/here/your/path/</pre></code>
@@ -38,12 +38,12 @@ On linux:
 <h2>2) Download the docker images</h2>
 Docker image tar file is stored on Zenodo. Open a shell command and change dir to the root of the cloned Git repository. Then execute the following commands to download the images tar files to the right project folder:
 
-<pre><code>wget https://zenodo.org/record/6980009/files/Seurat4.tar?download=1 -o $WORKING_DIR/ETV6_2020/docker_images/docker/seurat/Seurat4.tar</pre></code>
+<pre><code>wget https://zenodo.org/record/6980009/files/Seurat4.tar?download=1 -o $WORKING_DIR/FLI1_2021/docker_images/docker/seurat/Seurat4.tar</pre></code>
 
 <h2>Load docker images</h2>
 In order to execute analysis, you must load the provided docker images onto your Docker. Docker must be installed on your system. See https://docs.docker.com/install/ for details on Docker installation. Open a shell command, change dir to the folder in which you cloned the project and type:
 
-<pre><code>docker load -i $WORKING_DIR/ETV6_2020/docker_images/docker/seurat/Seurat4.tar</pre></code>
+<pre><code>docker load -i $WORKING_DIR/FLI1_2021/docker_images/docker/seurat/Seurat4.tar</pre></code>
 
 Those commands will take some time. 
 
@@ -52,7 +52,7 @@ The pre-processed data is already (partially, ".mtx.gz" files are missing for mR
 Download or produce the pre-processed data (CellRanger / CITE-seq-count results) <br>
 Pre-processed data (CellRanger / CITE-seq-count results) are available on GEO (accession ID : GSE206089)
 
-If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/ETV6_2020/preprocessing/Readme.md <br>
+If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/FLI1_2021/preprocessing/Readme.md <br>
 
 
 ### Run the R/Seurat analysis  
@@ -79,18 +79,18 @@ Pre-processed data is already in github. Alternatively, it can be generated foll
 
 If downloaded or generated (need to copy or move files in the directories listed below), mRNA and HTO files have to be in separated directories as following:
 <ul>
-	<li> <WORKING_DIR>/ETV6_2020/seurat_analysis/data/HTO/barcodes.tsv.gz</li>
-	<li> <WORKING_DIR>/ETV6_2020/seurat_analysis/data/HTO/features.tsv.gz</li>
-	<li> <WORKING_DIR>/ETV6_2020/seurat_analysis/data/HTO/matrix.mtx.gz</li>
-	<li> <WORKING_DIR>/ETV6_2020/seurat_analysis/data/mRNA/barcodes.tsv.gz</li>
-	<li> <WORKING_DIR>/ETV6_2020/seurat_analysis/data/mRNA/features.tsv.gz</li>
-	<li> <WORKING_DIR>/ETV6_2020/seurat_analysis/data/mRNA/matrix.mtx.gz</li>
+	<li> <WORKING_DIR>/FLI1_2021/seurat_analysis/data/HTO/barcodes.tsv.gz</li>
+	<li> <WORKING_DIR>/FLI1_2021/seurat_analysis/data/HTO/features.tsv.gz</li>
+	<li> <WORKING_DIR>/FLI1_2021/seurat_analysis/data/HTO/matrix.mtx.gz</li>
+	<li> <WORKING_DIR>/FLI1_2021/seurat_analysis/data/mRNA/barcodes.tsv.gz</li>
+	<li> <WORKING_DIR>/FLI1_2021/seurat_analysis/data/mRNA/features.tsv.gz</li>
+	<li> <WORKING_DIR>/FLI1_2021/seurat_analysis/data/mRNA/matrix.mtx.gz</li>
 </ul>
 
 SCENIC output needed (auc_mtx.csv) to get all figures in the Seurat analysis is present in github and is already in the cloned directory but can also be produced following the detailed commands given in "SCENIC_analysis" directory.
 
 Rmd scripts to run :
-<WORKING_DIR>/ETV6_2020/seurat_analysis/script/
+<WORKING_DIR>/FLI1_2021/seurat_analysis/script/
 
 
 <b>Output</b>
@@ -106,11 +106,11 @@ After running the analysis, the ouput directory will contain:
 
 <b>Execution</b>
 
-To run the Seurat analysis, ensure you have correctly downloaded the pre-processed data in the folder <WORKING_DIR>/ETV6_2020/seurat_analysis/data/mRNA and <WORKING_DIR>/ETV6_2020/seurat_analysis/data/HTO. 
+To run the Seurat analysis, ensure you have correctly downloaded the pre-processed data in the folder <WORKING_DIR>/FLI1_2021/seurat_analysis/data/mRNA and <WORKING_DIR>/FLI1_2021/seurat_analysis/data/HTO. 
 
 To get into the RStudio environnement and run the analysis, just open the scripts: Files>Open
 
 
 <b>Results</b>
 
-Once the analysis done, the results should be in you WORKING_DIR/ETV6_2020/seurat_analysis/output/ folder.
+Once the analysis done, the results should be in you WORKING_DIR/FLI1_2021/seurat_analysis/output/ folder.
