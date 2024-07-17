@@ -52,7 +52,7 @@ The pre-processed data is already (partially, ".mtx.gz" files are missing for mR
 Download or produce the pre-processed data (CellRanger / CITE-seq-count results) <br>
 Pre-processed data (CellRanger / CITE-seq-count results) are available on GEO (accession ID : ...)
 
-If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/FLI1_2021/preprocessing/Readme.md <br>
+If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/FLI1_2021/tree/main/preprocessing/Readme.md <br>
 
 
 ### Run the R/Seurat analysis  
