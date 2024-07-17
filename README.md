@@ -21,28 +21,20 @@ This repository contains instructions and material to reproduce the analysis rep
 
 ### FASTQ preprocessing
 
-  - 56 FASTQ files are available in SRA under the accession number ......... (Accessible once published).
-    - 28 FASTQ files of paired-end reads sequenced from the mRNA libraries
+  - 24 FASTQ files are available in SRA under the accession number ......... (Accessible once published).
+    - 12 FASTQ files of paired-end reads sequenced from the mRNA libraries
       - 4  FASTQ files for the 2021-42-set3 mRNA library
       - 8  FASTQ files for the 2021-42-set5 mRNA library
-      - 8  FASTQ files for the Run325 mRNA library
-      - 8  FASTQ files for the Run331 mRNA library
-    - 28 FAST files of paired-end reads sequenced from the HTO libraries
+    - 12 FAST files of paired-end reads sequenced from the HTO libraries
       - 4 FASTQ files for the 2021-42-set3 HTO library
       - 8 FASTQ files for the 2021-42-set5 HTO library
-      - 8 FASTQ files for the Run325 HTO library
-      - 8 FASTQ files for the Run331 HTO library
   - Cellranger and CITE-seq-count outputs are available in GEO (GSE <i> To be completed </i>): 
     - Cellranger outputs: 
       -  2021-42-set3 outputs are available under accession number GSM <i> To be completed </i>
       -  2021-42-set5 outputs are available under accession number GSM <i> To be completed </i>
-      -  Run325 outputs are available under accession number GSM <i> To be completed </i>
-      -  Run331 outputs are available under accession number GSM <i> To be completed </i>
     - CITE-seq-count outputs:
       -  2021-42-set3 outputs are available under accession number GSM <i> To be completed </i>
       -  2021-42-set5 outputs are available under accession number GSM <i> To be completed </i>
-      -  Run325 outputs are available under accession number GSM <i> To be completed </i>
-      -  Run331 outputs are available under accession number GSM <i> To be completed </i>
 
 ### Seurat analysis 
 

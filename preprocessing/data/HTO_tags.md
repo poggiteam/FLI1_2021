@@ -1,12 +1,4 @@
-HTO tags for all single-cell RNA sequencing experiments (Run325 Run331 2021-42-set3 and 2021-42-set5):
-
-<br>TTCCGCCTCTCTTTG - FLI1_D5_Run325
-<br>GTCAACTCTTTAGCG - Ctrl1_D5_Run325
-<br>TGATGGCCTATTGGG - Ctrl2_D5_Run325
-
-<br>GGTTGCCAGATGTCA - FLI1_D11_Run331
-<br>AGTAAGTTCAGCGTA - Ctrl1_D11_Run331
-<br>AAGTATCGTTTCGCA - Ctrl2_D11_Run331
+HTO tags for all single-cell RNA sequencing experiments (2021-42-set3 and 2021-42-set5):
 
 <br>CAGTAGTCACGGTCA - FLI1mViv_set3
 <br>CTCCTCTGCAATTAC - Ctrl3_set3

@@ -46,7 +46,7 @@ Docker images tar files are stored on Zenodo. Open a shell command and change di
 <b>3) Get the pre-processed data</b>
 The pre-processed data is already partially in github directory you cloned, you will need to:<br>
 Download or produce the pre-processed data (cellRanger results) <br>
-Pre-processed data (CellRanger results) are available on GEO (accession ID : GSE206089): <br>
+Pre-processed data (CellRanger results) are available on GEO (accession ID : ...): <br>
 <ul>
   <li>Binary aligment map (BAM) </li>
 	<li>mRNA count per cells : </li>
@@ -54,7 +54,7 @@ Pre-processed data (CellRanger results) are available on GEO (accession ID : GSE
 	<li>mRNA_barcodes.tsv.gz</li>
 	</ul>
 </ul>
-If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/FLI_2021/preprocessing <br>
+If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/FLI1_2021/tree/main/preprocessing <br>
 
 ## Run the Souporcell analysis 
 

@@ -160,4 +160,4 @@ CITE-seq-Count -R1 <WORKING_DIR>/FLI1_2021/preprocessing/data/S000001_HTO_S1_L00
 
 Once the analysis done, you should get result files in the <WORKING_DIR>/FLI1_2021/preprocessing/output folder (with the newly created "CITE-seq-count143_output" folder)
 
-You need to perform these analyses for each run (Run325 Run331 2021-42-set3 and 2021-42-set5).
+You need to perform these analyses for each run (2021-42-set3 and 2021-42-set5).
