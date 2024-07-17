@@ -1,6 +1,6 @@
 # FLI1_2021
 
-Article: The transcription factor FLI-1 regulates TLN1 expression in megakaryocytes
+Article: FLI1 and GATA1 govern TLN1 transcription: new insights into FLI1-related platelet disorders
 
 Authors: Marjorie Poggi* <i> To be completed </i>
 
