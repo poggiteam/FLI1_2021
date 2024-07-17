@@ -14,9 +14,8 @@ To reproduce the analysis, you have to first, prepare the environments (see "Pre
 
 ### Prerequisites (Docker system & containers and data)
 
-Docker container image is available on zenodo : https://zenodo.org/record/6980009/files/Seurat4.tar?download=1<br>
+Docker container image is available on zenodo : https://zenodo.org/api/records/12759766/draft/files/Seurat4.tar/content<br>
 Pre-processed data is available in github and GEO (...) : https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=... <br>
-
 
 In order to prepare the environment for analysis execution, it is required to:
 

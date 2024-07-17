@@ -43,8 +43,5 @@ Seurat scripts Rmd can be download on this repository
 
 ### Images
 
-All images are available in Zenodo: https://zenodo.org/record/6980009
+All images are available in Zenodo: https://zenodo.org/uploads/12759766
 
-### Figures 
-
-Two scripts are available for download in "script_figures" to re-create all R-computed figures in the article.

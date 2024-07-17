@@ -12,7 +12,7 @@ To reproduce the analysis, you have to first, prepare the environments (see "Pre
 
 ### Prerequisites (System system & containers and data)
 
-Singularity container images are available in zenodo : https://doi.org/10.5281/zenodo.6980009
+Singularity container images are available in zenodo : https://zenodo.org/uploads/12759766
 
 In order to prepare the environment for analysis execution, it is required to:
 
