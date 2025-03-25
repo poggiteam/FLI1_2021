@@ -8,7 +8,10 @@ Authors: Elisa Gabinaud, Laurent Hannouche, Mathilde Veneziano-Broccia, Johannes
 
 <i> https://pubmed.ncbi.nlm.nih.gov/39744817/ </i>
 
-Citation: <i> To be completed </i>
+Citation: Elisa Gabinaud, Laurent Hannouche, Mathilde Veneziano-Broccia, Johannes Van Agthoven, Justine Suffit, Julien Maurizio, Delphine Potier, Dominique Payet-Bornet, Delphine Bastelica, Elisa Andersen, Manal Ibrahim-Kosta, Timothée Bigot, Céline Falaise, Hemostasis Unit of Lille, Anne Vincenot, Pierre-Emmanuel Morange, Paul Saultier, Marie-Christine Alessi, and Marjorie Poggi
+Collaborative Groups: Hemostasis Unit of Lille (Anne Bauters, Melanie Daniel, Camille Paris, Anabelle Dupont). 
+FLI1 and GATA1 govern TLN1 transcription: new insights into FLI1-related platelet disorders. 
+Haematologica. 2025 Jan 2. doi: 10.3324/haematol.2024.286372 
 
 ## Overview 
 
