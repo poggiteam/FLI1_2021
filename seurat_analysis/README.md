@@ -60,7 +60,7 @@ Analysis can be directly run inside docker containers by compiling Rmarkdown fil
 
 <b>Input</b>
 
-Pre-processed data is already in github. Alternatively, it can be generated following detailed commands to run fastq preprocessing are given in the "fastq_pre-processing" directory or directly downloaded in GEO (accession ID : ...). 
+Pre-processed data is already in github. Alternatively, it can be generated following detailed commands to run fastq preprocessing are given in the "fastq_pre-processing" directory or directly downloaded in GEO (accession ID : GSE273210). 
 <ul>
 	<li>mRNA count per cells : </li>
 	<ul>
