@@ -18,7 +18,7 @@ Docker container images are available in zenodo :
 <li>CellRanger : https://zenodo.org/record/6980009/files/cellranger5.img?download=1 </li>
 <li>CITE-seq-Count : https://zenodo.org/record/6980009/files/citeseq-count1.4.3.img?download=1 </li>
 
-Raw fastq files are available in SRA (....) 
+Raw fastq files are available in SRA (SRP522475) 
 Transcriptome is available at 10xGenomics website (https://cf.10xgenomics.com/supp/cell-exp/refdata-gex-GRCh38-2020-A.tar.gz) and in Zenodo (https://zenodo.org/record/6980009/files/refdata-gex-GRCh38-2020-A.tar.gz?download=1)
 
 <pre><code>
@@ -62,7 +62,7 @@ In order to execute analysis, you must first launch the singularity image you wa
 
 
 <h3>4) Download the FASTQ files </h3>
-Fastq files available on SRA (accession ID : .......) can be processed with CellRanger (mRNA) or CITE-seq-count (HTO).
+Fastq files available on SRA (accession ID : SRP522475) can be processed with CellRanger (mRNA) or CITE-seq-count (HTO).
 
 ## Run the analysis 
  
@@ -72,7 +72,7 @@ Output will be generated in the <WORKING_DIR>/preprocessing/output
 
 <b>Input</b>
 
-Fastq files are avaible in SRA (...).
+Fastq files are avaible in SRA (SRP522475).
 Pre-processed data can be generated following detailed commands to run fastq preprocessing are given in the "preprocessing" directory or directly downloaded in GEO (accession ID : GSE <i>To be completed </i>).
 
 <b>Output</b>
@@ -117,8 +117,8 @@ Output will be generated in the <WORKING_DIR>/preprocessing/output where <WORKIN
 
 <b>Input</b>
 
-Fastq files are avaible in SRA (...).
-Pre-processed data can be generated following detailed commands to run fastq preprocessing are given in the "0_fastq_pre-processing" directory or directly downloaded in GEO (accession ID : GSE<i> To be completed </i>). 
+Fastq files are avaible in SRA (SRP522475).
+Pre-processed data can be generated following detailed commands to run fastq preprocessing are given in the "0_fastq_pre-processing" directory or directly downloaded in GEO (accession ID : GSE273210). 
 
 
 <b>Output</b>
