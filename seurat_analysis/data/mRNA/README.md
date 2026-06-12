@@ -1,3 +1,2 @@
-<div align="left">
-  "matrix.mtx.gz" are available in GEO (GSE273210).
-</div>
+```text
+"matrix.mtx.gz" are available in GEO (GSE273210).
