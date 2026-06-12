@@ -4,7 +4,7 @@ Article: FLI1 and GATA1 govern TLN1 transcription: new insights into FLI1-relate
 
 Authors: Elisa Gabinaud, Laurent Hannouche, Mathilde Veneziano-Broccia, Johannes Van Agthoven, Justine Suffit, Julien Maurizio, Delphine Potier, Dominique Payet-Bornet, Delphine Bastelica, Elisa Andersen, Manal Ibrahim-Kosta, Timothée Bigot, Céline Falaise, Anne Vincenot, Pierre-Emmanuel Morange, Paul Saultier, Marie-Christine Alessi, Marjorie Poggi*
 
-/*/ Corresponding authors 
+/*/ Corresponding author 
 
 <i> https://pubmed.ncbi.nlm.nih.gov/39744817/ </i>
 
