@@ -23,7 +23,7 @@ In order to prepare the environment for analysis execution, it is required to:
 	<li> Clone the github repository and set the WORKING_DIR environment variable</li> 
 	<li> Download the RStudio / Seurat docker image tar file</li> 
 	<li> Load the docker image on your system</li> 
-	<li> Download Cellranger and CITE-seq-count results (available in GEO : ...) or pre-processed fastq data</li> 
+	<li> Download Cellranger and CITE-seq-count results (available in GEO : GSE273210) or pre-processed fastq data</li> 
 </ul>
 
 <h2>1) Clone the github repository</h2>
