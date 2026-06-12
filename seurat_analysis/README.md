@@ -49,7 +49,7 @@ Those commands will take some time.
 <h2>Get the pre-processed data</h2>
 The pre-processed data is already (partially, ".mtx.gz" files are missing for mRNA data) in github directory you cloned, alternatively, you can:<br>
 Download or produce the pre-processed data (CellRanger / CITE-seq-count results) <br>
-Pre-processed data (CellRanger / CITE-seq-count results) are available on GEO (accession ID : ...)
+Pre-processed data (CellRanger / CITE-seq-count results) are available on GEO (accession ID : GSE273210)
 
 If you prefer to perform the fastq data pre-processing, instructions are described in https://github.com/poggiteam/FLI1_2021/tree/main/preprocessing/Readme.md <br>
 
