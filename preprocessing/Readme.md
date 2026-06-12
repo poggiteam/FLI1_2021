@@ -73,7 +73,7 @@ Output will be generated in the <WORKING_DIR>/preprocessing/output
 <b>Input</b>
 
 Fastq files are avaible in SRA (SRP522475).
-Pre-processed data can be generated following detailed commands to run fastq preprocessing are given in the "preprocessing" directory or directly downloaded in GEO (accession ID : GSE <i>To be completed </i>).
+Pre-processed data can be generated following detailed commands to run fastq preprocessing are given in the "preprocessing" directory or directly downloaded in GEO (accession ID : GSE273210).
 
 <b>Output</b>
 
