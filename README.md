@@ -31,7 +31,7 @@ This repository contains instructions and material to reproduce the analysis rep
     - 12 FAST files of paired-end reads sequenced from the HTO libraries
       - 4 FASTQ files for the 2021-42-set3 HTO library
       - 8 FASTQ files for the 2021-42-set5 HTO library
-  - Cellranger and CITE-seq-count outputs are available in GEO (GSE GSE273210): 
+  - Cellranger and CITE-seq-count outputs are available in GEO (GSE273210): 
     - Cellranger outputs: 
       -  2021-42-set3 outputs are available under accession number GSM8424057
       -  2021-42-set5 outputs are available under accession number GSM8424058
